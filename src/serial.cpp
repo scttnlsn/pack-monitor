@@ -1,0 +1,36 @@
+#include <Arduino.h>
+#include <stdarg.h>
+
+#include "serial.h"
+
+namespace serial {
+  FILE serial_stdout;
+
+  int serial_putchar(char c, FILE* f) {
+    if (c == '\n') {
+      serial_putchar('\r', f);
+    }
+
+    return Serial.write(c) == 1 ? 0 : 1;
+  }
+
+  void init() {
+    Serial.begin(115200);
+
+    fdev_setup_stream(&serial_stdout, serial_putchar, NULL, _FDEV_SETUP_WRITE);
+    stdout = &serial_stdout;
+  }
+
+  void error(const char* format, ...) {
+    va_list args;
+    fprintf(stdout, "error: ");
+    va_start(args, format);
+    vfprintf(stdout, format, args);
+    va_end(args);
+    fprintf(stdout, "\n");
+  }
+
+  void value(const char *name, char *value) {
+    printf("%s:%s\n", name, value);
+  }
+}

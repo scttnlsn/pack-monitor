@@ -41,12 +41,12 @@ bool CellMonitors::connect() {
     return false;
   }
 
-  _num_cells = packet.value;
+  _num_cells = packet.value - 1;
 
-  // if (_num_cells != NUM_CELLS) {
-  //   serial::log("error", "cell_monitors", "invalid num cells");
-  //   return false;
-  // }
+  if (_num_cells != NUM_CELLS) {
+    serial::log("error", "cell_monitors", "invalid num cells");
+    return false;
+  }
 
   return true;
 }

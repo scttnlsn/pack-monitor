@@ -21,9 +21,9 @@ namespace serial {
     stdout = &serial_stdout;
   }
 
-  void error(const char* format, ...) {
+  void log(const char *level, const char *module, const char* format, ...) {
     va_list args;
-    fprintf(stdout, "error: ");
+    fprintf(stdout, "%s: %s: ", level, module);
     va_start(args, format);
     vfprintf(stdout, format, args);
     va_end(args);

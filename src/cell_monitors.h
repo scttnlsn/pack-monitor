@@ -13,15 +13,16 @@ typedef struct {
 } packet_t;
 
 class CellMonitors {
- public:
+public:
   CellMonitors(Stream &stream);
-  int begin();
+  bool connect();
+  bool read_voltage(uint8_t cell_address, uint16_t *voltage);
 
- private:
+private:
   Stream &_stream;
   uint8_t _num_cells;
-  int send(packet_t *packet);
-  int receive(packet_t *packet);
+  bool send(packet_t *packet);
+  bool receive(packet_t *packet);
 };
 
 #endif

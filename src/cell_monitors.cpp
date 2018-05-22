@@ -1,4 +1,8 @@
+#include <Arduino.h>
+
 #include "cell_monitors.h"
+#include "config.h"
+#include "serial.h"
 #include "utils.h"
 
 #define ADDRESS_BROADCAST 0x0
@@ -10,6 +14,7 @@
 #define REG_BALANCE 0x5
 
 #define PACKET_LENGTH 4
+#define PACKET_TIMEOUT 100
 
 void encode(uint8_t *buffer, packet_t *packet);
 void decode(uint8_t *buffer, packet_t *packet);
@@ -18,7 +23,7 @@ CellMonitors::CellMonitors(Stream &stream) : _stream(stream) {
   _num_cells = 0;
 }
 
-int CellMonitors::begin() {
+bool CellMonitors::connect() {
   packet_t packet;
   packet.address = ADDRESS_BROADCAST;
   packet.request = 1;
@@ -26,52 +31,93 @@ int CellMonitors::begin() {
   packet.write = 1;
   packet.value = 1;
 
-  int ret = send(&packet);
-  if (ret != 0) {
-    return -1;
+  if (!send(&packet)) {
+    serial::log("error", "cell_monitors", "packet not sent");
+    return false;
   }
 
-  ret = receive(&packet);
-  if (ret != 0) {
-    return -1;
+  if (!receive(&packet)) {
+    serial::log("error", "cell_monitors", "packet not received");
+    return false;
   }
 
   _num_cells = packet.value;
 
-  return 0;
+  // if (_num_cells != NUM_CELLS) {
+  //   serial::log("error", "cell_monitors", "invalid num cells");
+  //   return false;
+  // }
+
+  return true;
 }
 
-int CellMonitors::send(packet_t *packet) {
+bool CellMonitors::read_voltage(uint8_t cell_address, uint16_t *voltage) {
+  packet_t packet;
+  packet.address = cell_address;
+  packet.request = 1;
+  packet.reg = REG_VOLTAGE;
+  packet.write = 0;
+  packet.value = 0;
+
+  if (!send(&packet)) {
+    serial::log("error", "cell_monitors", "failed to send voltage read packet");
+    return false;
+  }
+
+  if (!receive(&packet)) {
+    serial::log("error", "cell_monitors", "did not receive voltage packet");
+    return false;
+  }
+
+  *voltage = packet.value;
+
+  return true;
+}
+
+bool CellMonitors::send(packet_t *packet) {
   uint8_t buffer[PACKET_LENGTH];
   encode(buffer, packet);
 
   for (uint8_t i = 0; i < PACKET_LENGTH; i++) {
-    _stream.write(buffer[i]);
+    if (_stream.write(buffer[i]) != 1) {
+      // failed to write byte
+      return false;
+    }
   }
-  _stream.write(utils::crc8(buffer, PACKET_LENGTH));
+
+  if (_stream.write(utils::crc8(buffer, PACKET_LENGTH)) != 1) {
+    return false;
+  }
+
   _stream.flush();
 
-  return 0;
+  return true;
 }
 
-int CellMonitors::receive(packet_t *packet) {
-  // TODO: timeout
-
+bool CellMonitors::receive(packet_t *packet) {
+  uint32_t start = millis();
   uint8_t buffer[PACKET_LENGTH + 1];
 
   for (uint8_t i = 0; i < (PACKET_LENGTH + 1); i++) {
+    while (!_stream.available()) {
+      if (millis() - start > PACKET_TIMEOUT) {
+        serial::log("error", "cell_monitors", "packet timeout");
+        return false;
+      }
+    }
+
     buffer[i] = _stream.read();
   }
 
   uint8_t crc = utils::crc8(buffer, PACKET_LENGTH);
   if (buffer[PACKET_LENGTH] != crc) {
-    // invalid CRC byte
-    return -1;
+    serial::log("error", "cell_monitors", "invalid CRC byte");
+    return false;
   }
 
   decode(buffer, packet);
 
-  return 0;
+  return true;
 }
 
 // 4 byte packet structure (msb to lsb):

@@ -3,7 +3,7 @@
 
 namespace serial {
   void init();
-  void error(const char *format, ...);
+  void log(const char *level, const char *module, const char *format, ...);
   void value(const char *name, char *value);
 }
 

@@ -63,9 +63,24 @@ void log() {
   uint8_t status = protection.status();
   sprintf(value_buffer, "%d", status);
   serial::value("status", value_buffer);
+
+  int32_t charge_current = measurements.charge_current();
+  sprintf(value_buffer, "%ld", charge_current);
+  serial::value("charge_current", value_buffer);
+
+  int32_t discharge_current = measurements.discharge_current();
+  sprintf(value_buffer, "%ld", discharge_current);
+  serial::value("discharge_current", value_buffer);
+}
+
+void zero() {
+  measurements.zero_current();
 }
 
 void setup() {
+  charge.disable();
+  discharge.disable();
+
   serial::init();
 
   comm.begin(9600);
@@ -76,8 +91,11 @@ void setup() {
     return;
   }
 
+  measurements.zero_current();
+
   timer.every(250, update);
   timer.every(1000, log);
+  timer.every(5000, zero);
 
   serial::log("info", "main", "ready");
 }

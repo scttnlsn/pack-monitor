@@ -28,6 +28,14 @@
 // I2C address of ADS1115 ADC
 #define ADC_ADDRESS 0x48
 
+// ADS1115 channels
+#define ADC_CHANNEL_PACK_VOLTAGE 0
+#define ADC_CHANNEL_CHARGE_CURRENT 2
+#define ADC_CHANNEL_DISCHARGE_CURRENT 3
+
+// ACS758 sensitivity (mV / A)
+#define ACS758_SENSITIVITY 20
+
 // RX pin connected to cell monitors
 #define RX_PIN 4
 

@@ -40,7 +40,7 @@ void update() {
     if (status & PROTECTION_STATUS_UV) {
       discharge.disable();
     } else {
-      discharge.disable();
+      discharge.enable();
     }
   }
 }
@@ -73,10 +73,6 @@ void log() {
   serial::value("discharge_current", value_buffer);
 }
 
-void zero() {
-  measurements.zero_current();
-}
-
 void setup() {
   charge.disable();
   discharge.disable();
@@ -93,9 +89,8 @@ void setup() {
 
   measurements.zero_current();
 
-  timer.every(250, update);
-  timer.every(1000, log);
-  timer.every(5000, zero);
+  timer.every(1000, update);
+  timer.every(3000, log);
 
   serial::log("info", "main", "ready");
 }

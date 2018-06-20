@@ -5,8 +5,8 @@
 #include "measurements.h"
 #include "serial.h"
 
-// covert ADC reading to current (mA)
-#define CURRENT(x) ((x) * 1000 / ADC_VOLTAGE_SCALER / ACS758_SENSITIVITY)
+// convert ADC reading to current (mA)
+#define CURRENT(adc) ((adc) * 1000 / ADC_VOLTAGE_SCALER / ACS758_SENSITIVITY)
 
 Measurements::Measurements(CellMonitors *cell_monitors, Adc *adc) : _cell_monitors(cell_monitors), _adc(adc) {
   for (uint8_t i = 0; i < NUM_CELLS; i++) {

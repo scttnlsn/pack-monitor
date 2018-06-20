@@ -6,7 +6,7 @@
 
 // The number of series cells in the battery pack.
 // There should be a cell monitor for each cell.
-#define NUM_CELLS 4
+#define NUM_CELLS 8
 
 // The minimum cell voltage (specified in mV) at which over-voltage protection is enabled.
 #define OV_ENABLE 3550

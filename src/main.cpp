@@ -87,7 +87,9 @@ void setup() {
     return;
   }
 
+  delay(1000);
   measurements.zero_current();
+  update();
 
   timer.every(1000, update);
   timer.every(3000, log);

@@ -59,7 +59,7 @@ uint8_t Protection::status() {
     status |= PROTECTION_STATUS_OV;
   }
 
-  if (_ov) {
+  if (_uv) {
     status |= PROTECTION_STATUS_UV;
   }
 

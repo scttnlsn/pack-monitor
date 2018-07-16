@@ -114,9 +114,13 @@ void setup() {
   timer.every(1000, update);
   timer.every(3000, log);
 
+  // 1 second watchdog
+  wdt_enable(WDTO_1S);
+
   serial::log("info", "main", "ready");
 }
 
 void loop() {
   timer.update();
+  wdt_reset();
 }

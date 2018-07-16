@@ -58,10 +58,10 @@ uint16_t Measurements::pack_voltage() {
   return _pack_voltage;
 }
 
-int32_t Measurements::discharge_current() {
-  return _discharge_current;
-}
-
 int32_t Measurements::charge_current() {
   return _charge_current;
+}
+
+int32_t Measurements::discharge_current() {
+  return _discharge_current;
 }

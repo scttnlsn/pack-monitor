@@ -1,8 +1,10 @@
 #include <Arduino.h>
+#include <avr/wdt.h>
 #include <SoftwareSerial.h>
 #include <Timer.h>
 
 #include "adc.h"
+#include "capacity.h"
 #include "cell_monitors.h"
 #include "config.h"
 #include "measurements.h"
@@ -15,6 +17,7 @@ CellMonitors cell_monitors(comm);
 Adc adc(ADC_ADDRESS);
 Measurements measurements(&cell_monitors, &adc);
 Protection protection(&measurements);
+Capacity capacity(NOMINAL_CAPACITY);
 Relay charge(CHARGE_PIN);
 Relay discharge(DISCHARGE_PIN);
 Timer timer;
@@ -24,6 +27,10 @@ void update() {
     protection.fault();
   }
 
+  int32_t net_current = measurements.charge_current() - measurements.discharge_current();
+  capacity.update(net_current);
+
+  uint8_t last_status = protection.status();
   protection.update();
   uint8_t status = protection.status();
 
@@ -32,6 +39,10 @@ void update() {
     discharge.disable();
   } else {
     if (status & PROTECTION_STATUS_OV) {
+      if (!(last_status & PROTECTION_STATUS_OV)) {
+        capacity.reset();
+      }
+
       charge.disable();
     } else {
       charge.enable();
@@ -71,6 +82,14 @@ void log() {
   int32_t discharge_current = measurements.discharge_current();
   sprintf(value_buffer, "%ld", discharge_current);
   serial::value("discharge_current", value_buffer);
+
+  uint32_t charge = capacity.charge();
+  sprintf(value_buffer, "%ld", charge);
+  serial::value("charge", value_buffer);
+
+  uint8_t soc = capacity.soc();
+  sprintf(value_buffer, "%d", soc);
+  serial::value("soc", value_buffer);
 }
 
 void setup() {
@@ -89,6 +108,7 @@ void setup() {
 
   delay(1000);
   measurements.zero_current();
+  capacity.begin();
   update();
 
   timer.every(1000, update);

@@ -23,7 +23,7 @@ namespace serial {
 
   void log(const char *level, const char *module, const char* format, ...) {
     va_list args;
-    fprintf(stdout, "%s: %s: ", level, module);
+    fprintf(stdout, "log/%s/%s/", level, module);
     va_start(args, format);
     vfprintf(stdout, format, args);
     va_end(args);
@@ -31,6 +31,6 @@ namespace serial {
   }
 
   void value(const char *name, char *value) {
-    printf("%s:%s\n", name, value);
+    printf("value/%s/%s\n", name, value);
   }
 }

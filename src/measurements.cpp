@@ -34,7 +34,7 @@ bool Measurements::update() {
   }
 
   uint16_t adc_voltage = _adc->read_voltage(ADC_CHANNEL_PACK_VOLTAGE);
-  _pack_voltage = adc_voltage * 11; // 100k - 10k divider
+  _pack_voltage = adc_voltage * PACK_VOLTAGE_DIVIDER;
 
   uint16_t adc_charge_current = _adc->read_raw(ADC_CHANNEL_CHARGE_CURRENT);
   _charge_current = CURRENT((int32_t) adc_charge_current - (int32_t) _charge_adc_zero);

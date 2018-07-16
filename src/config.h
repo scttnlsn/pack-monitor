@@ -19,8 +19,11 @@
 #define UV_ENABLE 3000
 
 // The minimum cell voltage (specified in mV) at which under-voltage protection is disabled.
-// This only applies whiel UV is enabled.
+// This only applies while UV is enabled.
 #define UV_DISABLE 3100
+
+// The nominal battery capacity (specified in mA seconds)
+#define NOMINAL_CAPACITY 360000000 // 100Ah
 
 // ------------------------------
 // Hardware config
@@ -47,5 +50,9 @@
 
 // pin connected to discharge relay
 #define DISCHARGE_PIN 7
+
+// voltage divider scaler for reading pack voltage
+// 100k / 10k divider w/ calibration
+#define PACK_VOLTAGE_DIVIDER (110000 / 10000 / 10000)
 
 #endif

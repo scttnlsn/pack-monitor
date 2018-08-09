@@ -52,7 +52,7 @@
 #define DISCHARGE_PIN 7
 
 // voltage divider scaler for reading pack voltage
-// 100k / 10k divider w/ calibration
-#define PACK_VOLTAGE_DIVIDER (110000 / 10000 / 10000)
+// 100k / 10k divider
+#define PACK_VOLTAGE_DIVIDER 110000 / 10000
 
 #endif

@@ -42,7 +42,7 @@ void Protection::update() {
     _uv = false;
   }
 
-  if (abs((int16_t) sum_voltage - (int16_t) _measurements->pack_voltage()) >= 200) {
+  if (abs((int16_t) sum_voltage - (int16_t) _measurements->pack_voltage()) >= MAX_VOLTAGE_ERROR) {
     // we've exceeded max allowable error in voltage measurements
     _fault = true;
   }

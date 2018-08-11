@@ -25,6 +25,10 @@
 // The nominal battery capacity (specified in mA seconds)
 #define NOMINAL_CAPACITY 360000000 // 100Ah
 
+// The maximum error tolerated between the pack voltage reading
+// and the sum of the cell voltages (specified in mV)
+#define MAX_VOLTAGE_ERROR 200
+
 // ------------------------------
 // Hardware config
 

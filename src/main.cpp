@@ -27,8 +27,7 @@ void update() {
     protection.fault();
   }
 
-  int32_t net_current = measurements.charge_current() - measurements.discharge_current();
-  capacity.update(net_current);
+  capacity.update(measurements.charge_current(), measurements.discharge_current());
 
   uint8_t last_status = protection.status();
   protection.update();
@@ -83,12 +82,24 @@ void log() {
   sprintf(value_buffer, "%ld", discharge_current);
   serial::value("discharge_current", value_buffer);
 
-  uint32_t charge = capacity.charge();
-  sprintf(value_buffer, "%ld", charge);
-  serial::value("charge", value_buffer);
+  uint32_t cc_net = capacity.cc_net();
+  sprintf(value_buffer, "%ld", cc_net);
+  serial::value("cc_net", value_buffer);
 
-  uint8_t soc = capacity.soc();
-  sprintf(value_buffer, "%d", soc);
+  uint32_t cc_charge = capacity.cc_charge();
+  sprintf(value_buffer, "%ld", cc_charge);
+  serial::value("cc_charge", value_buffer);
+
+  uint32_t cc_discharge = capacity.cc_discharge();
+  sprintf(value_buffer, "%ld", cc_discharge);
+  serial::value("cc_discharge", value_buffer);
+
+  uint32_t cc_counter = capacity.cc_counter();
+  sprintf(value_buffer, "%ld", cc_counter);
+  serial::value("cc_counter", value_buffer);
+
+  uint32_t soc = capacity.soc();
+  sprintf(value_buffer, "%ld", soc);
   serial::value("soc", value_buffer);
 }
 

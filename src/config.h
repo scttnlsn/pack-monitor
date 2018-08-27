@@ -29,6 +29,9 @@
 // and the sum of the cell voltages (specified in mV)
 #define MAX_VOLTAGE_ERROR 200
 
+// The time interval (in milliseconds) during which coulomb-counting values are summed
+#define CC_COUNTER_INTERVAL 3600000 // 1 hour
+
 // ------------------------------
 // Hardware config
 

@@ -38,7 +38,7 @@ void Capacity::update(int32_t charge_current, int32_t discharge_current) {
   }
 
   _cc_charge += charge_current * 1000 / delta;
-  _cc_discharge += discharge_current * 1000 / delta;;
+  _cc_discharge += discharge_current * 1000 / delta;
   _cc_net += ((charge_current - discharge_current) * 1000 / delta);
   _cc_counter += delta;
   _timestamp = now;

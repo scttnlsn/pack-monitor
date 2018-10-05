@@ -2,6 +2,7 @@ import argparse
 import datetime
 import json
 import logging
+import sys
 import time
 from pymodbus.client.sync import ModbusSerialClient
 
@@ -66,6 +67,7 @@ def main():
 
     while True:
         print(json.dumps(measurements.sample()))
+        sys.stdout.flush()
         time.sleep(args.interval / 1000)
 
 if __name__ == '__main__':

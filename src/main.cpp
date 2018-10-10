@@ -144,10 +144,10 @@ void setup() {
   charge.disable();
   discharge.disable();
 
-  serial::init();
+  serial::init(19200);
 
   modbus.cbVector[CB_READ_REGISTERS] = read_registers;
-  modbus.begin(115200);
+  modbus.begin(19200);
 
   comm.begin(9600);
 

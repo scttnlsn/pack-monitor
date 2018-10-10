@@ -14,8 +14,8 @@ namespace serial {
     return Serial.write(c) == 1 ? 0 : 1;
   }
 
-  void init() {
-    Serial.begin(115200);
+  void init(uint32_t baud) {
+    Serial.begin(baud);
 
     fdev_setup_stream(&serial_stdout, serial_putchar, NULL, _FDEV_SETUP_WRITE);
     stdout = &serial_stdout;

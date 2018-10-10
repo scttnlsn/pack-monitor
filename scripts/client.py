@@ -41,7 +41,7 @@ class Measurements(object):
         return res.registers
 
 def connect(port):
-    modbus = ModbusSerialClient(method='rtu', port=port, baudrate=115200)
+    modbus = ModbusSerialClient(method='rtu', port=port, baudrate=19200)
 
     res = modbus.connect()
     if not res:

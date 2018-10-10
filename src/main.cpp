@@ -13,16 +13,7 @@
 #include "relay.h"
 #include "serial.h"
 
-SoftwareSerial comm(RX_PIN, TX_PIN);
-CellMonitors cell_monitors(comm);
-Adc adc(ADC_ADDRESS);
-Measurements measurements(&cell_monitors, &adc);
-Protection protection(&measurements);
-Capacity capacity(NOMINAL_CAPACITY);
-Relay charge(CHARGE_PIN);
-Relay discharge(DISCHARGE_PIN);
-Timer timer;
-Modbus modbus(Serial, 1, -1);
+#define NUM_REGISTERS 15 + NUM_CELLS
 
 typedef enum {
   REGISTER_STATUS = 0,
@@ -44,7 +35,16 @@ typedef enum {
   REGISTER_CELL_VOLTAGES
 } register_t;
 
-#define NUM_REGISTERS 15 + NUM_CELLS
+SoftwareSerial comm(RX_PIN, TX_PIN);
+CellMonitors cell_monitors(comm);
+Adc adc(ADC_ADDRESS);
+Measurements measurements(&cell_monitors, &adc);
+Protection protection(&measurements);
+Capacity capacity(NOMINAL_CAPACITY);
+Relay charge(CHARGE_PIN);
+Relay discharge(DISCHARGE_PIN);
+Timer timer;
+Modbus modbus(Serial, 1, -1);
 
 uint16_t registers[NUM_REGISTERS];
 
@@ -99,13 +99,20 @@ void update_registers() {
 }
 
 void update() {
-  if (!measurements.update()) {
-    protection.fault();
+  uint8_t last_status = protection.status();
+
+  if (last_status & PROTECTION_STATUS_ERROR) {
+    if (cell_monitors.connect() && measurements.update()) {
+      protection.clear_error();
+    }
+  } else {
+    if (!measurements.update()) {
+      protection.error();
+    }
   }
 
   capacity.update(measurements.charge_current(), measurements.discharge_current());
 
-  uint8_t last_status = protection.status();
   protection.update();
   uint8_t status = protection.status();
 

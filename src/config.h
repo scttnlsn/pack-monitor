@@ -1,6 +1,10 @@
 #ifndef __CONFIG_H__
 #define __CONFIG_H__
 
+// When a communication error occurs, we wait this long
+// before triggering a fault
+#define ERROR_TIMEOUT 5000
+
 // ------------------------------
 // Battery config
 

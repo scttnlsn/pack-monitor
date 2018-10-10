@@ -6,6 +6,7 @@ Protection::Protection(Measurements *measurements) : _measurements(measurements)
   _ov = false;
   _uv = false;
   _fault = false;
+  _error = false;
 }
 
 void Protection::update() {
@@ -46,10 +47,23 @@ void Protection::update() {
     // we've exceeded max allowable error in voltage measurements
     _fault = true;
   }
+
+  if (_error && millis() - _error_timestamp >= ERROR_TIMEOUT) {
+    fault();
+  }
 }
 
 void Protection::fault() {
   _fault = true;
+}
+
+void Protection::error() {
+  _error = true;
+  _error_timestamp = millis();
+}
+
+void Protection::clear_error() {
+  _error = false;
 }
 
 uint8_t Protection::status() {
@@ -65,6 +79,10 @@ uint8_t Protection::status() {
 
   if (_fault) {
     status |= PROTECTION_STATUS_FAULT;
+  }
+
+  if (_error) {
+    status |= PROTECTION_STATUS_ERROR;
   }
 
   return status;

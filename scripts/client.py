@@ -52,7 +52,7 @@ def connect(port):
 def main():
     parser = argparse.ArgumentParser(description='communicate with charge controller')
     parser.add_argument('--port', help='serial device name')
-    parser.add_argument('--interval', help='polling interval (in milliseconds)', default=1000)
+    parser.add_argument('--interval', help='polling interval (in milliseconds)', default=1000, type=int)
     parser.add_argument('--num-cells', help='the number of cells', default=8, type=int)
     parser.add_argument('--debug', help='show debugging messages')
     args = parser.parse_args()

@@ -1,65 +1,41 @@
 import argparse
-import datetime
 import json
 import sys
 import time
 from pymodbus.client.sync import ModbusSerialClient
 
-def int32(values):
-    msb, lsb = values
-    return (msb << 16) | lsb
+class Modbus:
 
-class Measurements(object):
+    def __init__(self, device, baudrate=115200):
+        self.client = ModbusSerialClient(method='rtu', port=device, baudrate=baudrate)
 
-    def __init__(self, modbus, num_cells):
-        self.modbus = modbus
-        self.num_cells = num_cells
+    def connect(self):
+        res = self.client.connect()
+        if not res:
+            raise f'error connecting to serial device: {device}'
 
-    def sample(self):
-        registers = self.read_registers()
-        return {
-            'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'status': registers[0],
-            'charge_current': int32(registers[1:3]),
-            'discharge_current': int32(registers[3:5]),
-            'cc_charge': int32(registers[5:7]),
-            'cc_discharge': int32(registers[7:9]),
-            'cc_net': int32(registers[9:11]),
-            'cc_counter': int32(registers[11:13]),
-            'soc': int32(registers[13:15]),
-            'cell_voltages': registers[15:]
-        }
 
     def read_registers(self):
-        count = 15 + self.num_cells
-        res = self.modbus.read_input_registers(address=0, count=count, unit=1)
+        res = self.client.read_holding_registers(address=1, count=2, unit=1)
 
         if not hasattr(res, 'registers'):
-            raise res
+            raise Exception(res)
 
         return res.registers
 
-def connect(port):
-    modbus = ModbusSerialClient(method='rtu', port=port, baudrate=19200)
-
-    res = modbus.connect()
-    if not res:
-        raise 'error connecting to serial client'
-
-    return modbus
-
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--port', help='serial device name')
+    parser.add_argument('--device', help='serial device')
     parser.add_argument('--interval', help='polling interval (in milliseconds)', default=1000, type=int)
-    parser.add_argument('--num-cells', help='the number of cells', default=8, type=int)
     args = parser.parse_args()
 
-    modbus = connect(args.port)
-    measurements = Measurements(modbus, args.num_cells)
+    modbus = Modbus(args.device)
+    modbus.connect()
+    time.sleep(1)
 
     while True:
-        print(json.dumps(measurements.sample()))
+        data = modbus.read_registers()
+        print(json.dumps(data))
         sys.stdout.flush()
         time.sleep(args.interval / 1000)
 

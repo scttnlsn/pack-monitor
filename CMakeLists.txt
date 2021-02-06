@@ -6,7 +6,13 @@ project(pack_monitor_project)
 
 pico_sdk_init()
 
-add_executable(pack_monitor main.c)
+add_executable(
+  pack_monitor
+  src/main.c
+  src/led.c
+  src/ringbuf.c
+  src/modbus.c
+)
 
 pico_enable_stdio_usb(pack_monitor 1)
 pico_add_extra_outputs(pack_monitor)

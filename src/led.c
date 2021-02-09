@@ -3,6 +3,7 @@
 
 #include "led.h"
 
+// onboard LED
 const uint8_t LED_PIN = 25;
 
 void led_init() {

@@ -12,9 +12,14 @@ add_executable(
   src/led.c
   src/ringbuf.c
   src/modbus.c
+  src/onewire.c
+  src/ds18b20.c
 )
 
 pico_enable_stdio_usb(pack_monitor 1)
 pico_add_extra_outputs(pack_monitor)
 
-target_link_libraries(pack_monitor pico_stdlib)
+target_link_libraries(
+  pack_monitor
+  pico_stdlib
+)

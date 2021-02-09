@@ -1,24 +1,34 @@
 import logging
 import time
 
-FORMAT = ('%(asctime)-15s %(threadName)-15s '
-          '%(levelname)-8s %(module)-15s:%(lineno)-8s %(message)s')
-logging.basicConfig(format=FORMAT)
-log = logging.getLogger()
-log.setLevel(logging.DEBUG)
+# logging.basicConfig()
+# log = logging.getLogger()
+# log.setLevel(logging.DEBUG)
 
 from pymodbus.client.sync import ModbusSerialClient
 modbus = ModbusSerialClient(method='rtu', port='/dev/ttyACM0', baudrate=115200)
-print('connecting...')
 modbus.connect()
-time.sleep(1)
-print('connected.')
 
 res = modbus.read_holding_registers(address=1, count=2, unit=1)
 print(res.registers)
 
-modbus.write_register(1, 1, unit=1)
-modbus.write_register(2, 1, unit=1)
+# modbus.write_register(1, 1, unit=1)
+# modbus.write_register(2, 1, unit=1)
 
-res = modbus.read_holding_registers(address=1, count=2, unit=1)
-print(res.registers)
+# res = modbus.read_holding_registers(address=1, count=2, unit=1)
+# print(res.registers)
+
+temp_msb = res.registers[0]
+temp_lsb = res.registers[1]
+
+integral = ((temp_msb << 8) | temp_lsb) >> 4
+decimal = temp_lsb & 0xF
+
+sign = temp_msb & 0b10000000;
+if sign > 0:
+    integral *= -1
+
+temp_c = integral + (decimal * 0.0625)
+temp_f = temp_c * 9 / 5 + 32
+
+print(temp_f)

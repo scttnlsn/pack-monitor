@@ -14,6 +14,7 @@ add_executable(
   src/modbus.c
   src/onewire.c
   src/ds18b20.c
+  src/cell_monitors.c
 )
 
 pico_enable_stdio_usb(pack_monitor 1)

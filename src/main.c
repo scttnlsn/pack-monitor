@@ -7,6 +7,7 @@
 #include "modbus.h"
 #include "onewire.h"
 #include "ds18b20.h"
+#include "cell_monitors.h"
 
 bool timer_callback(repeating_timer_t *rt);
 
@@ -16,6 +17,8 @@ uint16_t registers[1024];
 onewire_t onewire = {
   .pin = ONEWIRE_PIN,
 };
+
+cell_monitors_t cell_monitors;
 
 queue_t timer_fifo;
 
@@ -36,7 +39,14 @@ int main() {
 
   onewire_init(&onewire);
 
+  cell_monitors_init(&cell_monitors);
+
   led_blink();
+
+  sleep_ms(1000);
+  if (!cell_monitors_connect(&cell_monitors)) {
+    puts("err: could not connect to cell monitors");
+  }
 
   while (1) {
     uint8_t queue_element;
@@ -45,6 +55,12 @@ int main() {
       uint32_t temp = ds18b20_read_temp(&onewire);
       registers[0] = (temp >> 16) & 0xFFFF;
       registers[1] = temp & 0xFFFF;
+
+      uint16_t voltage = 0;
+      cell_monitors_read_voltage(&cell_monitors, 1, &voltage);
+      registers[2] = voltage;
+      cell_monitors_read_voltage(&cell_monitors, 2, &voltage);
+      registers[3] = voltage;
     }
 
     modbus_update(&modbus);

@@ -9,7 +9,7 @@ from pymodbus.client.sync import ModbusSerialClient
 modbus = ModbusSerialClient(method='rtu', port='/dev/ttyACM0', baudrate=115200)
 modbus.connect()
 
-res = modbus.read_holding_registers(address=1, count=2, unit=1)
+res = modbus.read_holding_registers(address=1, count=4, unit=1)
 print(res.registers)
 
 # modbus.write_register(1, 1, unit=1)

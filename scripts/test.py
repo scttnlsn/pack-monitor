@@ -1,34 +1,34 @@
-import logging
-import time
+# pip install pyserial pymodbus
 
+# import logging
 # logging.basicConfig()
 # log = logging.getLogger()
 # log.setLevel(logging.DEBUG)
 
-from pymodbus.client.sync import ModbusSerialClient
-modbus = ModbusSerialClient(method='rtu', port='/dev/ttyACM0', baudrate=115200)
+from pymodbus.client import ModbusSerialClient
+from pymodbus import FramerType
+
+modbus = ModbusSerialClient(
+    port="/dev/ttyACM0",
+    framer=FramerType.RTU,
+    baudrate=115200,
+)
 modbus.connect()
 
-res = modbus.read_holding_registers(address=1, count=4, unit=1)
+res = modbus.read_holding_registers(address=1, count=4)
 print(res.registers)
 
-# modbus.write_register(1, 1, unit=1)
-# modbus.write_register(2, 1, unit=1)
+# temp_msb = res.registers[0]
+# temp_lsb = res.registers[1]
 
-# res = modbus.read_holding_registers(address=1, count=2, unit=1)
-# print(res.registers)
+# integral = ((temp_msb << 8) | temp_lsb) >> 4
+# decimal = temp_lsb & 0xF
 
-temp_msb = res.registers[0]
-temp_lsb = res.registers[1]
+# sign = temp_msb & 0b10000000;
+# if sign > 0:
+#     integral *= -1
 
-integral = ((temp_msb << 8) | temp_lsb) >> 4
-decimal = temp_lsb & 0xF
+# temp_c = integral + (decimal * 0.0625)
+# temp_f = temp_c * 9 / 5 + 32
 
-sign = temp_msb & 0b10000000;
-if sign > 0:
-    integral *= -1
-
-temp_c = integral + (decimal * 0.0625)
-temp_f = temp_c * 9 / 5 + 32
-
-print(temp_f)
+# print(temp_f)

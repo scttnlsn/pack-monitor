@@ -21,14 +21,46 @@ onewire_t onewire = {
 cell_monitors_t cell_monitors;
 
 queue_t timer_fifo;
+repeating_timer_t timer;
+
+bool timer_callback(repeating_timer_t *rt) {
+  uint8_t queue_element;
+  queue_try_add(&timer_fifo, &queue_element);
+
+  // keep repeating
+  return true;
+}
+
+void start_timer() {
+  add_repeating_timer_ms(5000, timer_callback, NULL, &timer);
+}
+
+void stop_timer() {
+  cancel_repeating_timer(&timer);
+}
+
+void connect_loop() {
+  stop_timer();
+  led_pulse_start();
+
+  while (1) {
+    puts("connecting to cell monitors...");
+    if (cell_monitors_connect(&cell_monitors)) {
+      puts("connected");
+      led_pulse_stop();
+      start_timer();
+      return;
+    }
+
+    // continue trying to reconnect every 3s
+    sleep_ms(3000);
+  }
+}
 
 int main() {
   stdio_init_all();
 
   queue_init(&timer_fifo, sizeof(uint8_t), 32);
-
-  repeating_timer_t timer;
-  add_repeating_timer_ms(3000, timer_callback, NULL, &timer);
 
   led_init();
 
@@ -44,36 +76,36 @@ int main() {
   led_blink();
 
   sleep_ms(1000);
-  if (!cell_monitors_connect(&cell_monitors)) {
-    puts("err: could not connect to cell monitors");
-  }
+  connect_loop();
 
   while (1) {
+    if (!cell_monitors.connected) {
+      connect_loop();
+    }
+    
     uint8_t queue_element;
     while (queue_try_remove(&timer_fifo, &queue_element)) {
       // timer expired
+
+      // 2 blinks to signal the start of a measurement
+      led_blink();
+      led_blink();
+
       uint32_t temp = ds18b20_read_temp(&onewire);
       registers[0] = (temp >> 16) & 0xFFFF;
       registers[1] = temp & 0xFFFF;
 
-      uint16_t voltage = 0;
-      cell_monitors_read_voltage(&cell_monitors, 1, &voltage);
-      registers[2] = voltage;
-      cell_monitors_read_voltage(&cell_monitors, 2, &voltage);
-      registers[3] = voltage;
+      for (uint16_t cell = 1; cell <= cell_monitors.num_cells; cell++) {
+        uint16_t voltage = 0;
+        cell_monitors_read_voltage(&cell_monitors, cell, &voltage);
+        registers[cell + 1] = voltage;
+      }
+
+      // 1 blink to signal the end of a measurement
+      led_blink();
     }
 
     modbus_update(&modbus);
     sleep_ms(1);
-
-    led_blink();
   }
-}
-
-bool timer_callback(repeating_timer_t *rt) {
-  uint8_t queue_element;
-  queue_try_add(&timer_fifo, &queue_element);
-
-  // keep repeating
-  return true;
 }

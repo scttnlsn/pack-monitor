@@ -25,4 +25,5 @@ pico_add_extra_outputs(pack_monitor)
 target_link_libraries(
   pack_monitor
   pico_stdlib
+  hardware_pwm
 )

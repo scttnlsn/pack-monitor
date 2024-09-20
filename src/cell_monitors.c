@@ -1,4 +1,6 @@
+#include <stdio.h>
 #include "pico/stdlib.h"
+#include "pico/time.h"
 #include "hardware/uart.h"
 
 #include "cell_monitors.h"
@@ -17,7 +19,7 @@
 #define REG_BALANCE 0x5
 
 #define PACKET_LENGTH 4
-#define PACKET_TIMEOUT 100
+#define PACKET_TIMEOUT_MS 100
 
 typedef struct {
   uint8_t address;
@@ -27,8 +29,8 @@ typedef struct {
   uint16_t value;
 } packet_t;
 
-static bool send(packet_t *packet);
-static bool receive(packet_t *packet);
+static void send(packet_t *packet);
+static bool recv(packet_t *packet);
 static void decode(uint8_t *buffer, packet_t *packet);
 static void encode(uint8_t *buffer, packet_t *packet);
 static uint8_t crc8(const uint8_t *buffer, uint32_t length);
@@ -51,10 +53,8 @@ bool cell_monitors_connect(cell_monitors_t *cell_monitors) {
   packet.write = 1;
   packet.value = 1;
 
-  if (!send(&packet)) {
-    return false;
-  }
-  if (!receive(&packet)) {
+  send(&packet);
+  if (!recv(&packet) != 0) {
     return false;
   }
 
@@ -71,10 +71,9 @@ bool cell_monitors_read_voltage(cell_monitors_t *cell_monitors, uint8_t cell_add
   packet.write = 0;
   packet.value = 0;
 
-  if (!send(&packet)) {
-    return false;
-  }
-  if (!receive(&packet)) {
+  send(&packet);
+  if (!recv(&packet)) {
+    cell_monitors->connected = false;
     return false;
   }
 
@@ -84,7 +83,7 @@ bool cell_monitors_read_voltage(cell_monitors_t *cell_monitors, uint8_t cell_add
 
 // static functions
 
-static bool send(packet_t *packet) {
+static void send(packet_t *packet) {
   uint8_t buffer[PACKET_LENGTH + 1];
   encode(buffer, packet);
 
@@ -92,15 +91,48 @@ static bool send(packet_t *packet) {
   buffer[PACKET_LENGTH] = crc;
 
   uart_write_blocking(UART_ID, buffer, PACKET_LENGTH + 1);
-  return true;
 }
 
-static bool receive(packet_t *packet) {
+static bool recv(packet_t *packet) {
   uint8_t buffer[PACKET_LENGTH + 1];
-  uart_read_blocking(UART_ID, buffer, PACKET_LENGTH + 1);
+
+  uint64_t start = time_us_64();
+  uint8_t bytes_read = 0;
+  while (bytes_read < PACKET_LENGTH + 1) {
+    uint64_t now = time_us_64();
+    
+    if (now - start > PACKET_TIMEOUT_MS * 1000) {
+      // timeout
+      puts("packet recv timeout");
+      return false;
+    }
+
+    if (!uart_is_readable(UART_ID)) {
+      continue;
+    }
+
+    buffer[bytes_read] = uart_getc(UART_ID);
+    bytes_read++;
+  }
 
   uint8_t crc = crc8(buffer, PACKET_LENGTH);
   if (buffer[PACKET_LENGTH] != crc) {
+    puts("packet CRC error");
+    
+    // This could happen either b/c of actual data corruption or b/c
+    // of packet arrival time.
+    // Consider the following sequence of events:
+    // - packet 1 sent
+    // - recv timeout (maybe due to connection issue)
+    // - reconnect
+    // - packet 2 sent
+    // - packet 1 recieved
+    // - CRC mismatch
+    // We should completely clear the UART buffer so the next send + recv succeeds
+    while (uart_is_readable(UART_ID)) {
+      // just discard everything incoming
+      uart_getc(UART_ID);
+    }
     return false;
   }
 
@@ -108,13 +140,32 @@ static bool receive(packet_t *packet) {
   return true;
 }
 
-// 4 byte packet structure (msb to lsb):
+// 4 byte packet structure:
 //
-// address (7 bits)
-// request=1/response=0 flag (1 bit)
-// reg (7 bits)
-// write=1/read=0 flag (1 bit)
-// value (16 bits)
+//   7    6    5    4    3    2    1    0
+// +----+----+----+----+----+----+----+----+
+// | ADDRESS                          | RR | 0
+// +----+----+----+----+----+----+----+----+
+// | REG                              | RW | 1
+// +----+----+----+----+----+----+----+----+
+// | VALUE UPPER                           | 2
+// +----+----+----+----+----+----+----+----+
+// | VALUE LOWER                           | 3
+// +----+----+----+----+----+----+----+----+
+//
+// ADDRESS (7 bits)
+//  - address of the cell module
+// RR (1 bit)
+//  - request/response flag
+//  - request = 1
+//  - response = 0
+// REG (7 bits)
+//  - cell module register
+// RW (1 bit)
+//  - read/write flag
+//  - write = 1
+//  - read = 0
+// VALUE (16 bits)
 
 static void decode(uint8_t *buffer, packet_t *packet) {
   packet->address = buffer[0] >> 1;

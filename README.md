@@ -1,9 +1,25 @@
 # pack-monitor
 
+## System Setup (Linux)
+
+```
+sudo apt update
+sudo apt install cmake gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential g++ libstdc++-arm-none-eabi-newlib
+```
+
+## SDK Setup
+
+```
+git clone https://github.com/raspberrypi/pico-sdk.git --branch master
+cd pico-sdk
+git submodule update --init
+cd ..
+export PICO_SDK_PATH=$(pwd)/pico-sdk
+```
+
 ## Build
 
 ```
-export PICO_SDK_PATH=/path/to/pico-sdk
 mkdir build
 cd build
 cmake ..

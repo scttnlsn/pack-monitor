@@ -11,6 +11,7 @@ pico_sdk_init()
 add_executable(
   pack_monitor
   src/main.c
+  src/events.c
   src/led.c
   src/ringbuf.c
   src/modbus.c

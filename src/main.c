@@ -72,10 +72,6 @@ int main() {
   onewire_init(&onewire);
 
   cell_monitors_init(&cell_monitors);
-
-  led_blink();
-
-  sleep_ms(1000);
   connect_loop();
 
   while (1) {
@@ -91,14 +87,18 @@ int main() {
       led_blink();
       led_blink();
 
-      uint32_t temp = ds18b20_read_temp(&onewire);
-      registers[0] = (temp >> 16) & 0xFFFF;
-      registers[1] = temp & 0xFFFF;
+      uint16_t reg = 0;
 
-      for (uint16_t cell = 1; cell <= cell_monitors.num_cells; cell++) {
+      uint32_t temp = ds18b20_read_temp(&onewire);
+      registers[reg++] = (temp >> 16) & 0xFFFF;
+      registers[reg++] = temp & 0xFFFF;
+
+      for (uint16_t i = 0; i < cell_monitors.num_cells; i++) {
+        uint8_t cell_address = i + 1;
         uint16_t voltage = 0;
-        cell_monitors_read_voltage(&cell_monitors, cell, &voltage);
-        registers[cell + 1] = voltage;
+        cell_monitors_read_voltage(&cell_monitors, cell_address, &voltage);
+
+        registers[reg++] = voltage;
       }
 
       // 1 blink to signal the end of a measurement

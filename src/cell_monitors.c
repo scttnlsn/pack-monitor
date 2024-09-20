@@ -19,7 +19,7 @@
 #define REG_BALANCE 0x5
 
 #define PACKET_LENGTH 4
-#define PACKET_TIMEOUT_MS 100
+#define PACKET_TIMEOUT_MS 2000
 
 typedef struct {
   uint8_t address;
@@ -58,6 +58,12 @@ bool cell_monitors_connect(cell_monitors_t *cell_monitors) {
     return false;
   }
 
+  if (packet.request != 1) {
+    // since this was a broadcast request there should be no response
+    puts("unexpected response from broadcast request");
+    return false;
+  }
+
   cell_monitors->connected = true;
   cell_monitors->num_cells = packet.value - 1;
   return true;
@@ -77,6 +83,12 @@ bool cell_monitors_read_voltage(cell_monitors_t *cell_monitors, uint8_t cell_add
     return false;
   }
 
+  if (packet.request != 0) {
+    // no response (packet was forwarded all the way through the daisy chain)
+    puts("no packet response");
+    return false;
+  }
+
   *voltage = packet.value;
   return true;
 }
@@ -84,6 +96,12 @@ bool cell_monitors_read_voltage(cell_monitors_t *cell_monitors, uint8_t cell_add
 // static functions
 
 static void send(packet_t *packet) {
+  // Clear UART RX in case there are and old packets in the buffer.
+  // We want to make sure the next response pertains to this sent packet.
+  while (uart_is_readable(UART_ID)) {
+    uart_getc(UART_ID);
+  }
+
   uint8_t buffer[PACKET_LENGTH + 1];
   encode(buffer, packet);
 
@@ -118,21 +136,6 @@ static bool recv(packet_t *packet) {
   uint8_t crc = crc8(buffer, PACKET_LENGTH);
   if (buffer[PACKET_LENGTH] != crc) {
     puts("packet CRC error");
-    
-    // This could happen either b/c of actual data corruption or b/c
-    // of packet arrival time.
-    // Consider the following sequence of events:
-    // - packet 1 sent
-    // - recv timeout (maybe due to connection issue)
-    // - reconnect
-    // - packet 2 sent
-    // - packet 1 recieved
-    // - CRC mismatch
-    // We should completely clear the UART buffer so the next send + recv succeeds
-    while (uart_is_readable(UART_ID)) {
-      // just discard everything incoming
-      uart_getc(UART_ID);
-    }
     return false;
   }
 

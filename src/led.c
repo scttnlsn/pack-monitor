@@ -15,9 +15,9 @@ void led_init() {
 
 void led_blink() {
   gpio_put(LED_PIN, 1);
-  sleep_ms(100);
+  sleep_ms(50);
   gpio_put(LED_PIN, 0);
-  sleep_ms(100);
+  sleep_ms(50);
 }
 
 void _pwm_handler() {

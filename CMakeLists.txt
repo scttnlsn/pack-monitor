@@ -27,4 +27,5 @@ target_link_libraries(
   pack_monitor
   pico_stdlib
   hardware_pwm
+  hardware_exception
 )

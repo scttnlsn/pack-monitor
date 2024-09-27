@@ -13,7 +13,7 @@ static void modbus_handle_error(modbus_t *modbus);
 static void modbus_handle_request(modbus_t *modbus);
 static void modbus_read_holding_register(modbus_t *modbus);
 static void modbus_write_single_register(modbus_t *modbus);
-static uint16_t modbus_crc16(uint8_t *data, uint8_t len);
+static uint16_t modbus_crc16(const uint8_t *data, uint8_t len);
 
 void modbus_init(modbus_t *modbus) {
   ringbuf_init(&modbus->ringbuf, modbus->buffer, sizeof(modbus->buffer));
@@ -79,8 +79,6 @@ static void modbus_parse_request(modbus_t *modbus) {
   modbus->request.pdu.value = (buffer[4] << 8) | buffer[5];
   modbus->request.crc = (buffer[6] << 8) | buffer[7];
 
-  led_blink();
-
   // TODO: check crc
 }
 
@@ -105,7 +103,6 @@ static void modbus_send(modbus_t *modbus, uint8_t *message, uint32_t len) {
   }
 
   fflush(stdout);
-  led_blink();
 }
 
 static void modbus_handle_error(modbus_t *modbus) {
@@ -160,6 +157,7 @@ static void modbus_write_single_register(modbus_t *modbus) {
   uint16_t register_idx = modbus->request.pdu.address - 1;
   uint16_t register_value = modbus->request.pdu.value;
 
+  uint16_t previous_value = modbus->registers[register_idx];
   modbus->registers[register_idx] = register_value;
 
   uint8_t response[5];
@@ -171,16 +169,17 @@ static void modbus_write_single_register(modbus_t *modbus) {
   response[index++] = register_value & 0xFF;
 
   modbus_send(modbus, response, sizeof(response));
+
+  if (previous_value != register_value) {
+    modbus->write_callback(register_idx, previous_value, register_value);
+  }
 }
 
-static uint16_t modbus_crc16(uint8_t *data, uint8_t len) {
+static uint16_t modbus_crc16(const uint8_t *data, uint8_t len) {
   uint16_t crc = 0xFFFF;
-
-  for (int i = 0; i < len; i++) {
-    uint8_t byte = data[i];
-
-    crc ^= byte;
-
+  
+  for (size_t i = 0; i < len; i++) {
+    crc ^= (uint16_t)data[i];
     for (int j = 0; j < 8; j++) {
       if (crc & 0x0001) {
         crc >>= 1;
@@ -190,6 +189,6 @@ static uint16_t modbus_crc16(uint8_t *data, uint8_t len) {
       }
     }
   }
-
+  
   return crc;
 }

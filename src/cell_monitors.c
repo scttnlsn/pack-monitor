@@ -12,12 +12,6 @@
 
 #define ADDRESS_BROADCAST 0x0
 
-#define REG_ADDRESS 0x1
-#define REG_VOLTAGE_REF 0x2
-#define REG_VOLTAGE 0x3
-#define REG_TEMP 0x4
-#define REG_BALANCE 0x5
-
 #define PACKET_LENGTH 4
 #define PACKET_TIMEOUT_MS 2000
 
@@ -49,7 +43,7 @@ bool cell_monitors_connect(cell_monitors_t *cell_monitors) {
   packet_t packet;
   packet.address = ADDRESS_BROADCAST;
   packet.request = 1;
-  packet.reg = REG_ADDRESS;
+  packet.reg = CELL_MONITORS_REG_ADDRESS;
   packet.write = 1;
   packet.value = 1;
 
@@ -69,11 +63,11 @@ bool cell_monitors_connect(cell_monitors_t *cell_monitors) {
   return true;
 }
 
-bool cell_monitors_read_voltage(cell_monitors_t *cell_monitors, uint8_t cell_address, uint16_t *voltage) {
+bool cell_monitors_read(cell_monitors_t *cell_monitors, uint8_t cell_address, uint8_t reg, uint16_t *value) {
   packet_t packet;
   packet.address = cell_address;
   packet.request = 1;
-  packet.reg = REG_VOLTAGE;
+  packet.reg = reg;
   packet.write = 0;
   packet.value = 0;
 
@@ -89,7 +83,35 @@ bool cell_monitors_read_voltage(cell_monitors_t *cell_monitors, uint8_t cell_add
     return false;
   }
 
-  *voltage = packet.value;
+  *value = packet.value;
+  return true;
+}
+
+bool cell_monitors_write(cell_monitors_t *cell_monitors, uint8_t cell_address, uint8_t reg, uint16_t value) {
+  packet_t packet;
+  packet.address = cell_address;
+  packet.request = 1;
+  packet.reg = reg;
+  packet.write = 1;
+  packet.value = value;
+
+  send(&packet);
+  if (!recv(&packet)) {
+    cell_monitors->connected = false;
+    return false;
+  }
+
+  if (packet.request != 0) {
+    // no response (packet was forwarded all the way through the daisy chain)
+    puts("no packet response");
+    return false;
+  }
+
+  if (packet.value != value) {
+    puts("unexpected value in response");
+    return false;
+  }
+
   return true;
 }
 

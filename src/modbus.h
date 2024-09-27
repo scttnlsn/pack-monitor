@@ -28,6 +28,9 @@ typedef struct {
 
   uint16_t *registers;
   uint32_t num_registers;
+
+  // accepts the register index, the previous register value and the current register value
+  void (*write_callback)(uint16_t reg, uint16_t previous, uint16_t current);
 } modbus_t;
 
 void modbus_init(modbus_t *modbus);

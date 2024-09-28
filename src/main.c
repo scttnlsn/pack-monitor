@@ -3,6 +3,7 @@
 #include "pico/stdlib.h"
 #include "pico/util/queue.h"
 #include "hardware/exception.h"
+#include "pico/time.h"
 
 #include "config.h"
 #include "events.h"
@@ -18,6 +19,7 @@ typedef struct __attribute__((packed, aligned(sizeof(uint32_t)))) {
   uint16_t connected;
   uint16_t error_code;
   uint16_t num_cells;
+  uint16_t round_trip_time;
   union {
     uint32_t temp;
     struct {
@@ -59,12 +61,14 @@ static void modbus_write_callback(uint16_t reg, uint16_t previous_value, uint16_
 }
 
 void connect_loop() {
+  registers.connected = 0;
   cancel_repeating_timer(&measurements_timer);
   led_pulse_start();
 
   while (1) {
     puts("connecting to cell monitors...");
     if (cell_monitors_connect(&cell_monitors)) {
+      registers.connected = 1;
       puts("connected");
       led_pulse_stop();
 
@@ -87,12 +91,17 @@ void collect_measurements() {
 
   registers.temp = ds18b20_read_temp(&onewire);
 
+  uint64_t start_time = to_ms_since_boot(get_absolute_time());
+
   for (uint16_t i = 0; i < cell_monitors.num_cells; i++) {
     uint8_t cell_address = i + 1;
     uint16_t voltage = 0;
     cell_monitors_read(&cell_monitors, cell_address, CELL_MONITORS_REG_VOLTAGE, &voltage);
     registers.cell_voltages[i] = voltage;
   }
+
+  uint64_t end_time = to_ms_since_boot(get_absolute_time());
+  registers.round_trip_time = (uint16_t)(end_time - start_time);
 
   // 1 blink to signal the end of a measurement
   led_blink();
@@ -110,6 +119,7 @@ void handle_register_written(uint16_t reg, uint16_t previous, uint16_t current) 
     uint16_t cell_offset = reg - offset;
     uint16_t cell_address = cell_offset + 1;
     uint16_t voltage_ref = registers.cell_voltage_refs[cell_offset];
+    
     if (!cell_monitors_write(&cell_monitors, cell_address, CELL_MONITORS_REG_VOLTAGE_REF, voltage_ref)) {
       // write failed - reset the register value back to previous
       registers.cell_voltage_refs[cell_offset] = previous;

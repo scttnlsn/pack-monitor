@@ -17,7 +17,7 @@ modbus = ModbusSerialClient(
 )
 modbus.connect()
 
-fixed_registers = 6
+fixed_registers = 7
 num_cells = 2
 max_cells = 128
 
@@ -31,7 +31,7 @@ reg_voltage_ref = fixed_registers + max_cells + 1
 reg_cell_voltages = fixed_registers + 1
 
 # res = modbus.read_holding_registers(address=fixed_registers + 1, count=num_cells)
-res = modbus.read_holding_registers(address=7, count=2)
+res = modbus.read_holding_registers(address=1, count=9)
 print(res)
 print(res.registers)
 

@@ -16,7 +16,7 @@ static void modbus_write_single_register(modbus_t *modbus);
 static uint16_t modbus_crc16(const uint8_t *data, uint8_t len);
 
 void modbus_init(modbus_t *modbus) {
-  ringbuf_init(&modbus->ringbuf, modbus->buffer, sizeof(modbus->buffer));
+  ringbuf_init(&modbus->ringbuf, modbus->buffer, sizeof(modbus->buffer), 1);
 
   // clear stdin
   while (1) {
@@ -58,7 +58,9 @@ static void modbus_read(modbus_t *modbus) {
     }
 
     uint8_t byte = (uint8_t) res;
-    if (!ringbuf_push(&modbus->ringbuf, byte)) {
+    uint8_t buffer[1];
+    buffer[0] = (uint8_t) res;
+    if (!ringbuf_push(&modbus->ringbuf, (void *)buffer)) {
       // error, not enough room in ringbuf
 
       // TODO: define enum for errors

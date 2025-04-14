@@ -17,21 +17,19 @@ modbus = ModbusSerialClient(
 )
 modbus.connect()
 
-fixed_registers = 7
 num_cells = 2
 max_cells = 128
+fixed_registers = 7
+reg_cell_voltages = fixed_registers + 1
+reg_voltage_ref = fixed_registers + max_cells + 1
 
 # calibrate voltage references:
 # new_ref_voltage = measured_voltage * current_ref_voltage / current_reported_voltage
 
-reg_voltage_ref = fixed_registers + max_cells + 1
 # modbus.write_register(address=reg_voltage_ref + 0, value=1082)
 # modbus.write_register(address=reg_voltage_ref + 1, value=1102)
 
-reg_cell_voltages = fixed_registers + 1
-
-# res = modbus.read_holding_registers(address=fixed_registers + 1, count=num_cells)
-res = modbus.read_holding_registers(address=1, count=9)
+res = modbus.read_holding_registers(address=reg_cell_voltages, count=num_cells)
 print(res)
 print(res.registers)
 

@@ -1,12 +1,16 @@
 #ifndef __CONFIG_H__
 #define __CONFIG_H__
 
+#define DEBUG false
+
 #define ONEWIRE_PIN 22
+#define CELL_MONITORS_UART_TX_PIN 4
+#define CELL_MONITORS_UART_RX_PIN 5
 
-// cell monitors use 7 bit addresses
-#define MAX_CELLS 128
+#define CELL_MONITORS_INTERVAL 5000
+#define CONNECT_TIMEOUT 10000
+#define REQUEST_TIMEOUT 2000
 
-#define MEASUREMENTS_INTERAL_MS 5000
-#define CONNECT_DELAY_MS 3000
+#define CHARGE_CUTOFF_TEMP 8 // ~46F
 
 #endif

@@ -32,3 +32,16 @@ uint32_t ds18b20_read_temp(onewire_t *onewire) {
 
   return (temp_msb << 16) | temp_lsb;
 }
+
+int32_t temp_c_int(uint32_t temp_raw) {
+  uint16_t upper = temp_raw >> 16;
+  uint16_t lower = temp_raw & 0xFFFF;
+
+  int32_t temp = ((upper << 8) | lower) >> 4;
+  uint8_t sign = upper & 0b10000000;
+  if (sign) {
+    temp *= -1;
+  }
+
+  return temp;
+}

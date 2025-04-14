@@ -46,3 +46,13 @@ bool ringbuf_pop(ringbuf_t *ringbuf, void *data) {
   ringbuf->count--;
   return true;
 }
+
+bool ringbuf_peek(ringbuf_t *ringbuf, void *data) {
+  if (ringbuf->count == 0) {
+    // empty
+    return false;
+  }
+
+  memcpy(data, ringbuf->tail, ringbuf->size);
+  return true;
+}

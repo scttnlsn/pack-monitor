@@ -12,35 +12,23 @@
 #include "onewire.h"
 #include "ds18b20.h"
 #include "cell_monitors.h"
-
-// packed and aligned so we can treat it as an array of uint16_t registers
-typedef struct __attribute__((packed, aligned(sizeof(uint32_t)))) {
-  uint16_t version;
-  uint16_t connected;
-  uint16_t error_code;
-  uint16_t num_cells;
-  uint16_t round_trip_time;
-  union {
-    uint32_t temp;
-    struct {
-      uint16_t temp_upper;
-      uint16_t temp_lower;
-    };
-  };
-
-  uint16_t cell_voltages[MAX_CELLS];
-  uint16_t cell_voltage_refs[MAX_CELLS];
-} registers_t;
+#include "registers.h"
 
 registers_t registers;
 onewire_t onewire = { .pin = ONEWIRE_PIN };
 modbus_t modbus;
 cell_monitors_t cell_monitors;
-repeating_timer_t measurements_timer;
+repeating_timer_t timer;
 
-bool measurements_timer_callback(repeating_timer_t *rt) {
+static void handle_connected();
+static void handle_disconnected();
+static void handle_interval();
+static void handle_register_updated();
+static void handle_cell_updated();
+
+bool timer_callback(repeating_timer_t *rt) {
   event_t event = {
-    .event_type = EVENT_TYPE_MEASURE,
+    .event_type = EVENT_TYPE_INTERVAL,
   };
   events_enqueue(event);
 
@@ -48,70 +36,133 @@ bool measurements_timer_callback(repeating_timer_t *rt) {
   return true;
 }
 
-static void modbus_write_callback(uint16_t reg, uint16_t previous_value, uint16_t current_value) {
-  event_t event = {
-    .event_type = EVENT_TYPE_REGISTER,
-    .reg_info = {
-      .reg = reg,
-      .previous_value = previous_value,
-      .current_value = current_value,
-    },
-  };
-  events_enqueue(event);
-}
-
-void connect_loop() {
-  registers.connected = 0;
-  cancel_repeating_timer(&measurements_timer);
-  led_pulse_start();
-
+void error_loop() {
   while (1) {
-    puts("connecting to cell monitors...");
-    if (cell_monitors_connect(&cell_monitors)) {
-      registers.connected = 1;
-      puts("connected");
-      led_pulse_stop();
-
-      if (registers.num_cells == 0) {
-        registers.num_cells = cell_monitors.num_cells;
-      }
-      add_repeating_timer_ms(MEASUREMENTS_INTERAL_MS, measurements_timer_callback, NULL, &measurements_timer);
-      return;
-    }
-
-    // continue trying to reconnect
-    sleep_ms(CONNECT_DELAY_MS);
+    led_blink();
+    led_blink();
+    led_blink();
+    sleep_ms(1000);
   }
 }
 
-void collect_measurements() {
-  // 2 blinks to signal the start of a measurement
+void isr_hardfault() {
+  error_loop();
+}
+
+int main() {
+  exception_set_exclusive_handler(HARDFAULT_EXCEPTION, isr_hardfault);
+
+  stdio_init_all();
+  events_init();
+  led_init();
+  onewire_init(&onewire);
+
+  registers.version = 1;
+  
+  modbus_init(&modbus);
+  modbus.unit_address = 1;
+  modbus.registers = (uint16_t *)&registers;
+  modbus.num_registers = sizeof(registers) / sizeof(uint16_t);
+
+  cell_monitors_init(
+    &cell_monitors,
+    uart1,
+    CELL_MONITORS_UART_RX_PIN,
+    CELL_MONITORS_UART_TX_PIN
+  );
+
+  add_repeating_timer_ms(
+    CELL_MONITORS_INTERVAL,
+    timer_callback,
+    NULL,
+    &timer
+  );
+
+  // initial connect
+  led_pulse_start();
+  cell_monitors_connect(&cell_monitors);
+
+  // main loop
+  while (true) {
+
+    // process any events from the queue
+    event_t event;
+    while (events_dequeue(&event)) {
+      switch (event.event_type) {
+        case EVENT_TYPE_CONNECTED:
+          handle_connected(&event);
+          break;
+        case EVENT_TYPE_DISCONNECTED:
+          handle_disconnected(&event);
+          break;
+        case EVENT_TYPE_INTERVAL:
+          handle_interval(&event);
+          break;
+        case EVENT_TYPE_REGISTER_UPDATED:
+          handle_register_updated(&event);
+          break;
+        case EVENT_TYPE_CELL_UPDATED:
+          handle_cell_updated(&event);
+          break;
+      }
+    }
+
+    // update various sub-systems
+    cell_monitors_update(&cell_monitors);
+    modbus_update(&modbus);
+
+    sleep_ms(1);
+  }
+}
+
+// event handlers
+
+static void handle_connected(event_t *event) {
+  led_pulse_stop();
+  registers.connected = 1;
+  registers.num_cells = cell_monitors.num_cells;
+}
+
+static void handle_disconnected(event_t *event) {
+  registers.connected = 0;
+
+  led_pulse_start();
+  if (!cell_monitors_connect(&cell_monitors)) {
+    // could not enqueue connection request
+    led_pulse_stop();
+    error_loop();
+  }
+}
+
+static void handle_interval(event_t *event) {
+  if (!cell_monitors.connected) {
+    return;
+  }
+
+  // 2 blinks signals the start of a measurement cycle
   led_blink();
   led_blink();
 
   registers.temp = ds18b20_read_temp(&onewire);
-
-  uint64_t start_time = to_ms_since_boot(get_absolute_time());
-
-  for (uint16_t i = 0; i < cell_monitors.num_cells; i++) {
-    uint8_t cell_address = i + 1;
-    uint16_t voltage = 0;
-    cell_monitors_read(&cell_monitors, cell_address, CELL_MONITORS_REG_VOLTAGE, &voltage);
-    registers.cell_voltages[i] = voltage;
+  
+  // enqueue voltage read request for each cell
+  uint8_t num_cells = cell_monitors.num_cells;
+  for (uint8_t cell_address = 1; cell_address <= num_cells; cell_address++) {
+    cell_monitors_read(
+        &cell_monitors,
+        cell_address,
+        CELL_MONITORS_REG_VOLTAGE
+    );
   }
-
-  uint64_t end_time = to_ms_since_boot(get_absolute_time());
-  registers.round_trip_time = (uint16_t)(end_time - start_time);
-
-  // 1 blink to signal the end of a measurement
-  led_blink();
 }
 
-void handle_register_written(uint16_t reg, uint16_t previous, uint16_t current) {
-  // handle cases where the write to a register means we need to
-  // write to a cell monitor
+static void handle_register_updated(event_t *event) {
+  // a register was written - we may need to write the update to the cell monitors
+  uint16_t reg = event->reg_info.reg;
+  uint16_t previous_value = event->reg_info.previous_value;
+  uint16_t current_value = event->reg_info.current_value;
 
-  // we want uint16_t offset but offsetof returns bytes
+  // offsetof returns bytes so we divide by 2
   uint16_t offset = offsetof(registers_t, cell_voltage_refs) / 2;
 
   if (offset <= reg && reg < offset + MAX_CELLS) {
@@ -119,61 +170,24 @@ void handle_register_written(uint16_t reg, uint16_t previous, uint16_t current) 
     uint16_t cell_offset = reg - offset;
     uint16_t cell_address = cell_offset + 1;
     uint16_t voltage_ref = registers.cell_voltage_refs[cell_offset];
-    
-    if (!cell_monitors_write(&cell_monitors, cell_address, CELL_MONITORS_REG_VOLTAGE_REF, voltage_ref)) {
-      // write failed - reset the register value back to previous
-      registers.cell_voltage_refs[cell_offset] = previous;
-    }
+
+    cell_monitors_write(
+      &cell_monitors,
+      cell_address,
+      CELL_MONITORS_REG_VOLTAGE_REF,
+      voltage_ref
+    );
   }
 }
 
-void isr_hardfault() {
-  while (1) {
-    led_blink();
-    sleep_ms(500);
-  }
-}
+static void handle_cell_updated(event_t *event) {
+  // cell state was updated
+  uint8_t cell_address = event->cell_address;
 
-int main() {
-  // init
-  stdio_init_all();
+  uint8_t cell_index = cell_address - 1;
+  registers.cell_voltages[cell_index] = cell_monitors.cell_states[cell_index].voltage;
+  registers.cell_voltage_refs[cell_index] = cell_monitors.cell_states[cell_index].voltage_ref;
 
-  exception_set_exclusive_handler(HARDFAULT_EXCEPTION, isr_hardfault);
-  events_init();
-  led_init();
-  
-  modbus_init(&modbus);
-  modbus.unit_address = 1;
-  modbus.registers = (uint16_t *)&registers;
-  modbus.num_registers = sizeof(registers) / sizeof(uint16_t);
-  modbus.write_callback = modbus_write_callback;
-
-  onewire_init(&onewire);
-  cell_monitors_init(&cell_monitors);
-
-  // connect to cell monitors
-  connect_loop();
-
-  // main loop
-  while (1) {
-    if (!cell_monitors.connected) {
-      puts("disconnected");
-      connect_loop();
-    }
-    
-    event_t event;
-    while (events_dequeue(&event)) {
-      switch (event.event_type) {
-        case EVENT_TYPE_MEASURE:
-          collect_measurements();
-          break;
-        case EVENT_TYPE_REGISTER:
-          handle_register_written(event.reg_info.reg, event.reg_info.previous_value, event.reg_info.current_value);
-          break;
-      }
-    }
-
-    modbus_update(&modbus);
-    sleep_ms(1);
-  }
+  // 1 blink indicates 1 measurement received
+  led_blink();
 }

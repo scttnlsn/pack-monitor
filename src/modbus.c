@@ -4,6 +4,7 @@
 #include <pico/error.h>
 
 #include "modbus.h"
+#include "events.h"
 #include "led.h"
 
 static void modbus_read(modbus_t *modbus);
@@ -146,6 +147,11 @@ static void modbus_read_holding_register(modbus_t *modbus) {
   response[index++] = modbus->request.pdu.function_code;
   response[index++] = byte_count;
 
+  if (register_idx < 0 || register_idx > modbus->num_registers) {
+    modbus_handle_error(modbus);
+    return;
+  }
+
   for (int i = 0; i < register_count; i++) {
     uint16_t register_value = modbus->registers[register_idx + i];
     response[index++] = (register_value >> 8) & 0xFF;
@@ -173,7 +179,15 @@ static void modbus_write_single_register(modbus_t *modbus) {
   modbus_send(modbus, response, sizeof(response));
 
   if (previous_value != register_value) {
-    modbus->write_callback(register_idx, previous_value, register_value);
+    event_t event = {
+      .event_type = EVENT_TYPE_REGISTER_UPDATED,
+      .reg_info = {
+        .reg = register_idx,
+        .previous_value = previous_value,
+        .current_value = register_value,
+      },
+    };
+  events_enqueue(event);
   }
 }
 

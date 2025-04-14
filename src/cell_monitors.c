@@ -4,180 +4,304 @@
 #include "hardware/uart.h"
 
 #include "cell_monitors.h"
+#include "config.h"
+#include "events.h"
 
-#define UART_ID uart1
-#define UART_BAUD_RATE 9600
-#define UART_TX_PIN 4
-#define UART_RX_PIN 5
-
+#define CELL_MONITORS_BAUD_RATE 9600
 #define ADDRESS_BROADCAST 0x0
+#define PACKET_LENGTH 6 // bytes
+#define REQUEST_QUEUE_LENGTH 32
 
-#define PACKET_LENGTH 4
-#define PACKET_TIMEOUT_MS 2000
-
-typedef struct {
-  uint8_t address;
-  uint8_t request;
-  uint8_t reg;
-  uint8_t write;
-  uint16_t value;
-} packet_t;
-
-static void send(packet_t *packet);
-static bool recv(packet_t *packet);
-static void decode(uint8_t *buffer, packet_t *packet);
-static void encode(uint8_t *buffer, packet_t *packet);
+static void handle_response(cell_monitors_t *cell_monitors);
+void send(cell_monitors_t *cell_monitors, cell_monitors_packet_t packet);
+static void decode(uint8_t *buffer, cell_monitors_packet_t *packet);
+static void encode(uint8_t *buffer, cell_monitors_packet_t *packet);
 static uint8_t crc8(const uint8_t *buffer, uint32_t length);
 
-void cell_monitors_init(cell_monitors_t *cell_monitors) {
-  uart_init(UART_ID, UART_BAUD_RATE);
-
-  gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
-  gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
-
+void cell_monitors_init(cell_monitors_t *cell_monitors, uart_inst_t *uart, uint rx_pin, uint tx_pin) {
+  cell_monitors->uart = uart;
   cell_monitors->connected = false;
+  cell_monitors->connecting = false;
   cell_monitors->num_cells = 0;
+  cell_monitors->packet_id = 0;
+  cell_monitors->waiting = false;
+
+  for (int cell_address = 1; cell_address <= MAX_CELLS; cell_address++) {
+    cell_state_t cell_state = {
+      .cell_address = cell_address,
+      .voltage = 0xFFFF, // undefined
+      .voltage_ref = 0xFFFF, // undefined
+      .last_read_at = 0,
+    };
+    cell_monitors->cell_states[cell_address - 1] = cell_state;
+  }
+
+  ringbuf_init(
+    &cell_monitors->uart_ringbuf,
+    cell_monitors->uart_buffer,
+    sizeof(cell_monitors->uart_buffer),
+    1
+  );
+
+  queue_init(
+    &cell_monitors->request_queue,
+    sizeof(cell_monitors_request_t),
+    REQUEST_QUEUE_LENGTH
+  );
+
+  uart_init(cell_monitors->uart, CELL_MONITORS_BAUD_RATE);
+  gpio_set_function(rx_pin, GPIO_FUNC_UART);
+  gpio_set_function(tx_pin, GPIO_FUNC_UART);
+}
+
+void cell_monitors_update(cell_monitors_t *cell_monitors) {
+  // copy all available bytes from the uart to the uart buffer
+  while (uart_is_readable(cell_monitors->uart)) {
+    uint8_t buffer[1];
+    buffer[0] = uart_getc(cell_monitors->uart);
+    ringbuf_push(&cell_monitors->uart_ringbuf, buffer);
+  }
+
+  // handle response for each packet in the uart buffer
+  while (cell_monitors->uart_ringbuf.count >= PACKET_LENGTH) {
+    handle_response(cell_monitors);
+  }
+
+  if (!cell_monitors->waiting) {
+    // send out the next request if we're not currently waiting for a response
+    cell_monitors_request_t request;
+    if (queue_try_remove(&cell_monitors->request_queue, &request)) {
+      // there's a pending request
+      send(cell_monitors, request.packet);
+
+      request.sent_at = get_absolute_time();
+      cell_monitors->current_request = request;
+      cell_monitors->waiting = true;
+    }
+  } else {
+    // waiting for a response
+
+    absolute_time_t last_sent_at = cell_monitors->current_request.sent_at;
+    int64_t waiting_ms = absolute_time_diff_us(last_sent_at, get_absolute_time()) / 1000;
+
+    if (waiting_ms > REQUEST_TIMEOUT) {
+      puts("error: request timeout");
+      cell_monitors_disconnect(cell_monitors);
+    }
+  }
 }
 
 bool cell_monitors_connect(cell_monitors_t *cell_monitors) {
-  packet_t packet;
+  cell_monitors->connecting = true;
+
+  cell_monitors_packet_t packet;
   packet.address = ADDRESS_BROADCAST;
   packet.request = 1;
   packet.reg = CELL_MONITORS_REG_ADDRESS;
   packet.write = 1;
   packet.value = 1;
 
-  send(&packet);
-  if (!recv(&packet) != 0) {
+  cell_monitors_request_t request = {
+    .packet = packet,
+    .sent_at = 0,
+    .received_at = 0,
+    .error = 0,
+  };
+
+  if (!queue_try_add(&cell_monitors->request_queue, &request)) {
+    puts("error: request queue full");
     return false;
   }
-
-  if (packet.request != 1) {
-    // since this was a broadcast request there should be no response
-    puts("unexpected response from broadcast request");
-    return false;
-  }
-
-  cell_monitors->connected = true;
-  cell_monitors->num_cells = packet.value - 1;
-  return true;
 }
 
-bool cell_monitors_read(cell_monitors_t *cell_monitors, uint8_t cell_address, uint8_t reg, uint16_t *value) {
-  packet_t packet;
+void cell_monitors_disconnect(cell_monitors_t *cell_monitors) {
+  // reset state
+  cell_monitors->connecting = false;
+  cell_monitors->connected = false;
+  cell_monitors->waiting = false;
+
+  // clear request queue
+  cell_monitors_request_t request;
+  while (queue_try_remove(&cell_monitors->request_queue, &request));
+
+  // clear the uart buffer
+  uint8_t buffer[1];
+  while (ringbuf_pop(&cell_monitors->uart_ringbuf, buffer));
+
+  // trigger disconnect event
+  event_t event = {
+    .event_type = EVENT_TYPE_DISCONNECTED,
+  };
+  events_enqueue(event);
+}
+
+bool cell_monitors_read(cell_monitors_t *cell_monitors, uint8_t cell_address, uint8_t reg) {
+  cell_monitors_packet_t packet;
+  packet.id = cell_monitors->packet_id++;
   packet.address = cell_address;
   packet.request = 1;
   packet.reg = reg;
   packet.write = 0;
   packet.value = 0;
 
-  send(&packet);
-  if (!recv(&packet)) {
-    cell_monitors->connected = false;
-    return false;
-  }
+  cell_monitors_request_t request = {
+    .packet = packet,
+    .sent_at = 0,
+    .received_at = 0,
+    .error = 0,
+  };
 
-  if (packet.request != 0) {
-    // no response (packet was forwarded all the way through the daisy chain)
-    puts("no packet response");
-    return false;
-  }
-
-  *value = packet.value;
-  return true;
+  return queue_try_add(&cell_monitors->request_queue, &request);
 }
 
 bool cell_monitors_write(cell_monitors_t *cell_monitors, uint8_t cell_address, uint8_t reg, uint16_t value) {
-  packet_t packet;
+  cell_monitors_packet_t packet;
+  packet.id = cell_monitors->packet_id++;
   packet.address = cell_address;
   packet.request = 1;
   packet.reg = reg;
   packet.write = 1;
   packet.value = value;
 
-  send(&packet);
-  if (!recv(&packet)) {
-    cell_monitors->connected = false;
-    return false;
-  }
+  cell_monitors_request_t request = {
+    .packet = packet,
+    .sent_at = 0,
+    .received_at = 0,
+    .error = 0,
+  };
 
-  if (packet.request != 0) {
-    // no response (packet was forwarded all the way through the daisy chain)
-    puts("no packet response");
-    return false;
-  }
-
-  if (packet.value != value) {
-    puts("unexpected value in response");
-    return false;
-  }
-
-  return true;
+  return queue_try_add(&cell_monitors->request_queue, &request);
 }
 
 // static functions
 
-static void send(packet_t *packet) {
-  // Clear UART RX in case there are and old packets in the buffer.
-  // We want to make sure the next response pertains to this sent packet.
-  while (uart_is_readable(UART_ID)) {
-    uart_getc(UART_ID);
-  }
+void send(cell_monitors_t *cell_monitors, cell_monitors_packet_t packet) {
+  uint8_t buffer[PACKET_LENGTH];
+  encode(buffer, &packet);
 
-  uint8_t buffer[PACKET_LENGTH + 1];
-  encode(buffer, packet);
+  uint8_t crc = crc8(buffer, PACKET_LENGTH - 1);
+  buffer[PACKET_LENGTH - 1] = crc;
 
-  uint8_t crc = crc8(buffer, PACKET_LENGTH);
-  buffer[PACKET_LENGTH] = crc;
+  uart_write_blocking(cell_monitors->uart, buffer, PACKET_LENGTH);
 
-  uart_write_blocking(UART_ID, buffer, PACKET_LENGTH + 1);
+  // printf("id: %d, ", packet.id);
+  // printf("address: %d, ", packet.address);
+  // printf("request: %d, ", packet.request);
+  // printf("reg: %d, ", packet.reg);
+  // printf("write: %d, ", packet.write);
+  // printf("value: %d\n", packet.value);
 }
 
-static bool recv(packet_t *packet) {
-  uint8_t buffer[PACKET_LENGTH + 1];
+static void handle_response(cell_monitors_t *cell_monitors) {
+  if (!cell_monitors->waiting) {
+    // there was no pending request
+    puts("error: no pending request");
 
-  uint64_t start = time_us_64();
-  uint8_t bytes_read = 0;
-  while (bytes_read < PACKET_LENGTH + 1) {
-    uint64_t now = time_us_64();
-    
-    if (now - start > PACKET_TIMEOUT_MS * 1000) {
-      // timeout
-      puts("packet recv timeout");
-      return false;
-    }
-
-    if (!uart_is_readable(UART_ID)) {
-      continue;
-    }
-
-    buffer[bytes_read] = uart_getc(UART_ID);
-    bytes_read++;
+    // clear the uart buffer
+    uint8_t buffer[1];
+    while (ringbuf_pop(&cell_monitors->uart_ringbuf, buffer));
+    return;
   }
 
-  uint8_t crc = crc8(buffer, PACKET_LENGTH);
-  if (buffer[PACKET_LENGTH] != crc) {
+  uint8_t buffer[PACKET_LENGTH];
+  for (uint8_t bytes_read = 0; bytes_read < PACKET_LENGTH; bytes_read++) {
+    if (!ringbuf_pop(&cell_monitors->uart_ringbuf, buffer + bytes_read)) {
+      // FIXME: why wasn't there a byte in the ringbuf?
+      puts("error: not enough bytes in uart ringbuf");
+      return;
+    }
+  }
+
+  cell_monitors_request_t request = cell_monitors->current_request;
+  request.received_at = get_absolute_time();
+
+  // absolute_time_t last_sent_at = cell_monitors->current_request.sent_at;
+  // int64_t rt_time_ms = absolute_time_diff_us(request.sent_at, request.received_at) / 1000;
+
+  uint8_t crc = crc8(buffer, PACKET_LENGTH - 1);
+  if (buffer[PACKET_LENGTH - 1] != crc) {
     puts("packet CRC error");
-    return false;
+    request.error = 1;
+    return;
   }
 
-  decode(buffer, packet);
-  return true;
+  cell_monitors_packet_t response_packet;
+  decode(buffer, &response_packet);
+
+  // printf("id: %d, ", response_packet.id);
+  // printf("address: %d, ", response_packet.address);
+  // printf("request: %d, ", response_packet.request);
+  // printf("reg: %d, ", response_packet.reg);
+  // printf("write: %d, ", response_packet.write);
+  // printf("value: %d\n", response_packet.value);
+
+  if (response_packet.address == 0) {
+    // request was a broadcast
+    if (response_packet.request != 1) {
+      // since this was a broadcast request there should be no response
+      request.error = 1;
+    } else {
+      cell_monitors->connected = true;
+      cell_monitors->connecting = false;
+      cell_monitors->num_cells = response_packet.value - 1;
+
+      puts("connected");
+      printf("num cells: %d\n", response_packet.value - 1);
+
+      event_t event = {
+        .event_type = EVENT_TYPE_CONNECTED,
+      };
+      events_enqueue(event);
+    }
+  } else {
+    // normal request
+    if (response_packet.request != 0) {
+      // no response (packet was just forwarded through the daisy chain)
+      request.error = 1;
+    } else {
+      uint8_t cell_index = response_packet.address - 1;
+      if (response_packet.write == 1) {
+        if (response_packet.reg == CELL_MONITORS_REG_VOLTAGE_REF) {
+          cell_monitors->cell_states[cell_index].voltage_ref = response_packet.value;
+        }
+      } else {
+        if (response_packet.reg == CELL_MONITORS_REG_VOLTAGE) {
+          cell_monitors->cell_states[cell_index].voltage = response_packet.value;
+        } else if (response_packet.reg == CELL_MONITORS_REG_VOLTAGE_REF) {
+          cell_monitors->cell_states[cell_index].voltage_ref = response_packet.value;
+        }
+      }
+
+      event_t event = {
+        .event_type = EVENT_TYPE_CELL_UPDATED,
+        .cell_address = response_packet.address,
+      };
+      events_enqueue(event);
+    }
+  }
+
+  cell_monitors->waiting = false;
 }
 
-// 4 byte packet structure:
+// packet structure:
 //
 //   7    6    5    4    3    2    1    0
 // +----+----+----+----+----+----+----+----+
-// | ADDRESS                          | RR | 0
+// | PACKET ID                             | 0
 // +----+----+----+----+----+----+----+----+
-// | REG                              | RW | 1
+// | ADDRESS                          | RR | 1
 // +----+----+----+----+----+----+----+----+
-// | VALUE UPPER                           | 2
+// | REG                              | RW | 2
 // +----+----+----+----+----+----+----+----+
-// | VALUE LOWER                           | 3
+// | VALUE UPPER                           | 3
+// +----+----+----+----+----+----+----+----+
+// | VALUE LOWER                           | 4
+// +----+----+----+----+----+----+----+----+
+// | CRC                                   | 5
 // +----+----+----+----+----+----+----+----+
 //
+// PACKET ID (8 bits)
+//  - incrementing ID
 // ADDRESS (7 bits)
 //  - address of the cell module
 // RR (1 bit)
@@ -191,20 +315,23 @@ static bool recv(packet_t *packet) {
 //  - write = 1
 //  - read = 0
 // VALUE (16 bits)
+// CRC (8 bits)
 
-static void decode(uint8_t *buffer, packet_t *packet) {
-  packet->address = buffer[0] >> 1;
-  packet->request = buffer[0] & 0x1;
-  packet->reg = buffer[1] >> 1;
-  packet->write = buffer[1] & 0x1;
-  packet->value = (buffer[2] << 8) | buffer[3];
+static void decode(uint8_t *buffer, cell_monitors_packet_t *packet) {
+  packet->id = buffer[0];
+  packet->address = buffer[1] >> 1;
+  packet->request = buffer[1] & 0x1;
+  packet->reg = buffer[2] >> 1;
+  packet->write = buffer[3] & 0x1;
+  packet->value = (buffer[3] << 8) | buffer[4];
 }
 
-static void encode(uint8_t *buffer, packet_t *packet) {
-  buffer[0] = (packet->address << 1) | (packet->request & 0x1);
-  buffer[1] = (packet->reg << 1) | (packet->write & 0x1);
-  buffer[2] = packet->value >> 8;
-  buffer[3] = packet->value & 0xFF;
+static void encode(uint8_t *buffer, cell_monitors_packet_t *packet) {
+  buffer[0] = packet->id;
+  buffer[1] = (packet->address << 1) | (packet->request & 0x1);
+  buffer[2] = (packet->reg << 1) | (packet->write & 0x1);
+  buffer[3] = packet->value >> 8;
+  buffer[4] = packet->value & 0xFF;
 }
 
 static uint8_t crc8(const uint8_t *buffer, uint32_t length) {

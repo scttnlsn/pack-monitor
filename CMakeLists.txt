@@ -16,7 +16,7 @@ add_executable(
   src/ringbuf.c
   src/modbus.c
   src/onewire.c
-  src/ds18b20.c
+  src/temp.c
   src/cell_monitors.c
   src/protection.c
 )

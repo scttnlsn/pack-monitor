@@ -16,6 +16,10 @@
 #define CELL_MONITORS_REG_VOLTAGE 0x3
 #define CELL_MONITORS_REG_BALANCE 0x4
 
+#define CELL_MONITORS_ERROR_CRC (1 << 0)
+#define CELL_MONITORS_ERROR_TIMEOUT (1 << 1)
+#define CELL_MONITORS_ERROR_NO_RESPONSE (1 << 2)
+
 typedef struct {
   uint8_t id;
   uint8_t address;

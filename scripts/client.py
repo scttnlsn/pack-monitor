@@ -1,5 +1,6 @@
 # pip install pymodbus
 
+from typing import Dict, List
 import argparse
 import json
 import sys
@@ -40,6 +41,21 @@ def temp(msb: int, lsb: int) -> float:
 
     return temp_f
 
+class Flags:
+
+    def __init__(self, flags: List[str]):
+        self.flags = flags
+
+    def __call__(self, value: int) -> Dict[str, bool]:
+        return {
+            flag: bool(value & (1 << shift))
+            for shift, flag in enumerate(self.flags)
+        }
+    
+status = Flags(["connecting", "connected"])
+protection = Flags(["ov", "uv", "ut", "fault"])
+error = Flags(["fault", "watchdog", "crc", "timeout"])
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", help="serial device")
@@ -51,22 +67,19 @@ def main():
     time.sleep(1)
 
     while True:
-        res = modbus.read_registers(address=1, count=10)
+        res = modbus.read_registers(address=1, count=8)
         data = dict(
             version=res[0],
-            connected=res[1],
-            error_code=res[2],
-            num_cells=res[3],
-            round_trip_time=res[4],
-            ov=res[5],
-            uv=res[6],
-            watchdog_caused_reboot=res[7],
-
-            temp=temp(res[8], res[9]),
+            status=status(res[1]),
+            protection=protection(res[2]),
+            errors=error(res[3]),
+            num_cells=res[4],
+            round_trip_time=res[5],
+            temp=temp(res[6], res[7]),
         )
 
         if data["num_cells"] > 0:
-            res = modbus.read_registers(address=11, count=data["num_cells"])
+            res = modbus.read_registers(address=9, count=data["num_cells"])
             data["cell_voltages"] = res
         print(json.dumps(data, indent=4))
         sys.stdout.flush()

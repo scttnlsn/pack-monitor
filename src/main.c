@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stddef.h>
+#include <string.h>
 #include "pico/stdlib.h"
 #include "pico/util/queue.h"
 #include "hardware/exception.h"
@@ -11,7 +12,7 @@
 #include "led.h"
 #include "modbus.h"
 #include "onewire.h"
-#include "ds18b20.h"
+#include "temp.h"
 #include "cell_monitors.h"
 #include "registers.h"
 #include "protection.h"
@@ -21,6 +22,7 @@ onewire_t onewire = { .pin = ONEWIRE_PIN };
 modbus_t modbus;
 cell_monitors_t cell_monitors;
 repeating_timer_t timer;
+temp_t temp;
 
 static void handle_connected();
 static void handle_disconnected();
@@ -38,7 +40,7 @@ bool timer_callback(repeating_timer_t *rt) {
   return true;
 }
 
-void error_loop() {
+void isr_hardfault() {
   watchdog_disable();
 
   while (1) {
@@ -49,8 +51,15 @@ void error_loop() {
   }
 }
 
-void isr_hardfault() {
-  error_loop();
+void connect() {
+  led_pulse_start();
+  if (!cell_monitors_connect(&cell_monitors)) {
+    // could not enqueue connection request
+    registers.errors |= ERROR_FAULT;
+    led_pulse_stop();
+  } else {
+    registers.status |= STATUS_CONNECTING;
+  }
 }
 
 int main() {
@@ -58,7 +67,7 @@ int main() {
   exception_set_exclusive_handler(HARDFAULT_EXCEPTION, isr_hardfault);
 
   if (watchdog_caused_reboot()) {
-    registers.watchdog_caused_reboot = 1;
+    registers.errors |= ERROR_WATCHDOG;
   }
 
   protection_init();
@@ -66,7 +75,9 @@ int main() {
   events_init();
   led_init();
   onewire_init(&onewire);
+  temp_init(&temp, &onewire);
 
+  memset(&registers, 0, sizeof(registers_t));
   registers.version = 1;
   
   modbus_init(&modbus);
@@ -88,9 +99,7 @@ int main() {
     &timer
   );
 
-  // initial connect
-  led_pulse_start();
-  cell_monitors_connect(&cell_monitors);
+  connect();
 
   // main loop
   while (true) {
@@ -123,7 +132,30 @@ int main() {
     protection_update(&registers);
     modbus_update(&modbus);
 
-    sleep_ms(1);
+    temp_result_t temp_result;
+    if (temp_update(&temp, &temp_result)) {
+      registers.temp_upper = temp_result.upper;
+      registers.temp_lower = temp_result.lower;
+    }
+
+    // update registers
+    if (cell_monitors.connected) {
+      if (cell_monitors.current_request.error) {
+        if (cell_monitors.current_request.error & CELL_MONITORS_ERROR_CRC) {
+          registers.errors |= ERROR_CRC;
+        } else {
+          registers.errors &= ~ERROR_CRC;
+        }
+
+        if (cell_monitors.current_request.error & CELL_MONITORS_ERROR_TIMEOUT) {
+          registers.errors |= ERROR_TIMEOUT;
+        } else {
+          registers.errors &= ~ERROR_TIMEOUT;
+        }
+      }
+    }
+
+    sleep_ms(10);
   }
 }
 
@@ -131,19 +163,19 @@ int main() {
 
 static void handle_connected(event_t *event) {
   led_pulse_stop();
-  registers.connected = 1;
+  registers.status |= STATUS_CONNECTED;
+  registers.status &= ~STATUS_CONNECTING;
   registers.num_cells = cell_monitors.num_cells;
 }
 
 static void handle_disconnected(event_t *event) {
-  registers.connected = 0;
-
-  led_pulse_start();
-  if (!cell_monitors_connect(&cell_monitors)) {
-    // could not enqueue connection request
-    led_pulse_stop();
-    error_loop();
+  registers.status &= ~STATUS_CONNECTED;
+  for (int i = 0; i < registers.num_cells; i++) {
+    registers.cell_voltages[i] = 0;
+    registers.cell_voltage_refs[i] = 0;
   }
+
+  connect();
 }
 
 static void handle_interval(event_t *event) {
@@ -155,8 +187,6 @@ static void handle_interval(event_t *event) {
   led_blink();
   led_blink();
 
-  registers.temp = ds18b20_read_temp(&onewire);
-  
   // enqueue voltage read request for each cell
   uint8_t num_cells = cell_monitors.num_cells;
   for (uint8_t cell_address = 1; cell_address <= num_cells; cell_address++) {
@@ -165,6 +195,11 @@ static void handle_interval(event_t *event) {
         cell_address,
         CELL_MONITORS_REG_VOLTAGE
     );
+  }
+
+  // start new temp read
+  if (!temp.waiting) {
+    temp_start_read(&temp);
   }
 }
 
@@ -199,6 +234,10 @@ static void handle_cell_updated(event_t *event) {
   uint8_t cell_index = cell_address - 1;
   registers.cell_voltages[cell_index] = cell_monitors.cell_states[cell_index].voltage;
   registers.cell_voltage_refs[cell_index] = cell_monitors.cell_states[cell_index].voltage_ref;
+
+  absolute_time_t sent_at = cell_monitors.current_request.sent_at;
+  absolute_time_t received_at = cell_monitors.current_request.received_at;
+  registers.round_trip_time = (uint16_t)absolute_time_diff_us(sent_at, received_at) / (uint16_t)1000;
 
   // 1 blink indicates 1 measurement received
   led_blink();

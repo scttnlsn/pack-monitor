@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "pico/stdlib.h"
 #include "pico/time.h"
 #include "hardware/uart.h"
@@ -25,12 +26,13 @@ void cell_monitors_init(cell_monitors_t *cell_monitors, uart_inst_t *uart, uint 
   cell_monitors->num_cells = 0;
   cell_monitors->packet_id = 0;
   cell_monitors->waiting = false;
+  memset(&cell_monitors->current_request, 0, sizeof(cell_monitors_request_t));
 
   for (int cell_address = 1; cell_address <= MAX_CELLS; cell_address++) {
     cell_state_t cell_state = {
       .cell_address = cell_address,
-      .voltage = 0xFFFF, // undefined
-      .voltage_ref = 0xFFFF, // undefined
+      .voltage = 0,
+      .voltage_ref = 0,
       .last_read_at = 0,
     };
     cell_monitors->cell_states[cell_address - 1] = cell_state;
@@ -85,7 +87,7 @@ void cell_monitors_update(cell_monitors_t *cell_monitors) {
     int64_t waiting_ms = absolute_time_diff_us(last_sent_at, get_absolute_time()) / 1000;
 
     if (waiting_ms > REQUEST_TIMEOUT) {
-      puts("error: request timeout");
+      cell_monitors->current_request.error |= CELL_MONITORS_ERROR_TIMEOUT;
       cell_monitors_disconnect(cell_monitors);
     }
   }
@@ -109,7 +111,6 @@ bool cell_monitors_connect(cell_monitors_t *cell_monitors) {
   };
 
   if (!queue_try_add(&cell_monitors->request_queue, &request)) {
-    puts("error: request queue full");
     return false;
   }
 }
@@ -119,6 +120,12 @@ void cell_monitors_disconnect(cell_monitors_t *cell_monitors) {
   cell_monitors->connecting = false;
   cell_monitors->connected = false;
   cell_monitors->waiting = false;
+
+  for (int i = 0; i < MAX_CELLS; i++) {
+    cell_monitors->cell_states[i].voltage = 0;
+    cell_monitors->cell_states[i].voltage_ref = 0;
+    cell_monitors->cell_states[i].last_read_at = 0;
+  }
 
   // clear request queue
   cell_monitors_request_t request;
@@ -194,8 +201,8 @@ void send(cell_monitors_t *cell_monitors, cell_monitors_packet_t packet) {
 
 static void handle_response(cell_monitors_t *cell_monitors) {
   if (!cell_monitors->waiting) {
-    // there was no pending request
-    puts("error: no pending request");
+    // there was no pending request but we still received some activity on the UART
+    // - this could happen after we disconnect but there's still an in-flight request
 
     // clear the uart buffer
     uint8_t buffer[1];
@@ -206,8 +213,9 @@ static void handle_response(cell_monitors_t *cell_monitors) {
   uint8_t buffer[PACKET_LENGTH];
   for (uint8_t bytes_read = 0; bytes_read < PACKET_LENGTH; bytes_read++) {
     if (!ringbuf_pop(&cell_monitors->uart_ringbuf, buffer + bytes_read)) {
-      // FIXME: why wasn't there a byte in the ringbuf?
-      puts("error: not enough bytes in uart ringbuf");
+      // we expected data in the UART buffer but not enough was present
+      cell_monitors->current_request.error |= CELL_MONITORS_ERROR_TIMEOUT;
+      cell_monitors_disconnect(cell_monitors);
       return;
     }
   }
@@ -215,15 +223,13 @@ static void handle_response(cell_monitors_t *cell_monitors) {
   cell_monitors_request_t request = cell_monitors->current_request;
   request.received_at = get_absolute_time();
 
-  // absolute_time_t last_sent_at = cell_monitors->current_request.sent_at;
-  // int64_t rt_time_ms = absolute_time_diff_us(request.sent_at, request.received_at) / 1000;
-
   uint8_t crc = crc8(buffer, PACKET_LENGTH - 1);
   if (buffer[PACKET_LENGTH - 1] != crc) {
-    puts("packet CRC error");
-    request.error = 1;
+    request.error |= CELL_MONITORS_ERROR_CRC;
     return;
   }
+
+  // TODO: check packet id matches
 
   cell_monitors_packet_t response_packet;
   decode(buffer, &response_packet);
@@ -239,14 +245,11 @@ static void handle_response(cell_monitors_t *cell_monitors) {
     // request was a broadcast
     if (response_packet.request != 1) {
       // since this was a broadcast request there should be no response
-      request.error = 1;
+      request.error = CELL_MONITORS_ERROR_NO_RESPONSE;
     } else {
       cell_monitors->connected = true;
       cell_monitors->connecting = false;
       cell_monitors->num_cells = response_packet.value - 1;
-
-      puts("connected");
-      printf("num cells: %d\n", response_packet.value - 1);
 
       event_t event = {
         .event_type = EVENT_TYPE_CONNECTED,
@@ -257,7 +260,7 @@ static void handle_response(cell_monitors_t *cell_monitors) {
     // normal request
     if (response_packet.request != 0) {
       // no response (packet was just forwarded through the daisy chain)
-      request.error = 1;
+      request.error = CELL_MONITORS_ERROR_NO_RESPONSE;
     } else {
       uint8_t cell_index = response_packet.address - 1;
       if (response_packet.write == 1) {
@@ -267,6 +270,7 @@ static void handle_response(cell_monitors_t *cell_monitors) {
       } else {
         if (response_packet.reg == CELL_MONITORS_REG_VOLTAGE) {
           cell_monitors->cell_states[cell_index].voltage = response_packet.value;
+          cell_monitors->cell_states[cell_index].last_read_at = get_absolute_time();
         } else if (response_packet.reg == CELL_MONITORS_REG_VOLTAGE_REF) {
           cell_monitors->cell_states[cell_index].voltage_ref = response_packet.value;
         }

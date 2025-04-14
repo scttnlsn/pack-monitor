@@ -18,6 +18,7 @@ add_executable(
   src/onewire.c
   src/ds18b20.c
   src/cell_monitors.c
+  src/protection.c
 )
 
 pico_enable_stdio_usb(pack_monitor 1)

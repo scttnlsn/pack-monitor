@@ -51,18 +51,22 @@ def main():
     time.sleep(1)
 
     while True:
-        res = modbus.read_registers(address=1, count=7)
+        res = modbus.read_registers(address=1, count=10)
         data = dict(
             version=res[0],
             connected=res[1],
             error_code=res[2],
             num_cells=res[3],
             round_trip_time=res[4],
-            temp=temp(res[5], res[6]),
+            ov=res[5],
+            uv=res[6],
+            watchdog_caused_reboot=res[7],
+
+            temp=temp(res[8], res[9]),
         )
 
         if data["num_cells"] > 0:
-            res = modbus.read_registers(address=8, count=data["num_cells"])
+            res = modbus.read_registers(address=11, count=data["num_cells"])
             data["cell_voltages"] = res
         print(json.dumps(data, indent=4))
         sys.stdout.flush()

@@ -4,6 +4,7 @@
 #include "pico/util/queue.h"
 #include "hardware/exception.h"
 #include "pico/time.h"
+#include "hardware/watchdog.h"
 
 #include "config.h"
 #include "events.h"
@@ -13,6 +14,7 @@
 #include "ds18b20.h"
 #include "cell_monitors.h"
 #include "registers.h"
+#include "protection.h"
 
 registers_t registers;
 onewire_t onewire = { .pin = ONEWIRE_PIN };
@@ -37,6 +39,8 @@ bool timer_callback(repeating_timer_t *rt) {
 }
 
 void error_loop() {
+  watchdog_disable();
+
   while (1) {
     led_blink();
     led_blink();
@@ -50,8 +54,14 @@ void isr_hardfault() {
 }
 
 int main() {
+  watchdog_enable(3000, false);
   exception_set_exclusive_handler(HARDFAULT_EXCEPTION, isr_hardfault);
 
+  if (watchdog_caused_reboot()) {
+    registers.watchdog_caused_reboot = 1;
+  }
+
+  protection_init();
   stdio_init_all();
   events_init();
   led_init();
@@ -84,6 +94,7 @@ int main() {
 
   // main loop
   while (true) {
+    watchdog_update();
 
     // process any events from the queue
     event_t event;
@@ -109,6 +120,7 @@ int main() {
 
     // update various sub-systems
     cell_monitors_update(&cell_monitors);
+    protection_update(&registers);
     modbus_update(&modbus);
 
     sleep_ms(1);

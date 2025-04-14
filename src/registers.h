@@ -13,6 +13,9 @@ typedef struct __attribute__((packed, aligned(sizeof(uint32_t)))) {
   uint16_t error_code;
   uint16_t num_cells;
   uint16_t round_trip_time;
+  uint16_t ov;
+  uint16_t uv;
+  uint16_t watchdog_caused_reboot;
 
   // this encodes a signed floating point temp
   union {

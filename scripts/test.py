@@ -19,7 +19,7 @@ modbus.connect()
 
 num_cells = 2
 max_cells = 128
-fixed_registers = 7
+fixed_registers = 10
 reg_cell_voltages = fixed_registers + 1
 reg_voltage_ref = fixed_registers + max_cells + 1
 

@@ -326,7 +326,7 @@ static void decode(uint8_t *buffer, cell_monitors_packet_t *packet) {
   packet->address = buffer[1] >> 1;
   packet->request = buffer[1] & 0x1;
   packet->reg = buffer[2] >> 1;
-  packet->write = buffer[3] & 0x1;
+  packet->write = buffer[2] & 0x1;
   packet->value = (buffer[3] << 8) | buffer[4];
 }
 

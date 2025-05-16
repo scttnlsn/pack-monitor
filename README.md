@@ -1,5 +1,8 @@
 # pack-monitor
 
+Communicates with 1 or more [cell-monitor](https://github.com/scttnlsn/cell-monitor)s to monitor and
+protect a battery pack.
+
 ## System Setup (Linux)
 
 ```

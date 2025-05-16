@@ -71,7 +71,11 @@ int main() {
   }
 
   protection_init();
+  
   stdio_init_all();
+  // we're sending binary data over stdio
+  stdio_set_translate_crlf(&stdio_usb, false);
+
   events_init();
   led_init();
   onewire_init(&onewire);
@@ -152,7 +156,19 @@ int main() {
         } else {
           registers.errors &= ~ERROR_TIMEOUT;
         }
+
+        if (cell_monitors.current_request.error & CELL_MONITORS_ERROR_NO_RESPONSE) {
+          registers.errors |= ERROR_NO_RESPONSE;
+        } else {
+          registers.errors &= ~ERROR_NO_RESPONSE;
+        }
       }
+    }
+
+    if (modbus.error) {
+      registers.errors |= ERROR_MODBUS;
+    } else {
+      registers.errors &= ~ERROR_MODBUS;
     }
 
     sleep_ms(10);
@@ -172,7 +188,6 @@ static void handle_disconnected(event_t *event) {
   registers.status &= ~STATUS_CONNECTED;
   for (int i = 0; i < registers.num_cells; i++) {
     registers.cell_voltages[i] = 0;
-    registers.cell_voltage_refs[i] = 0;
   }
 
   connect();
@@ -210,19 +225,19 @@ static void handle_register_updated(event_t *event) {
   uint16_t current_value = event->reg_info.current_value;
 
   // offsetof returns bytes so we divide by 2
-  uint16_t offset = offsetof(registers_t, cell_voltage_refs) / 2;
+  uint16_t offset = offsetof(registers_t, cell_voltages) / 2;
 
   if (offset <= reg && reg < offset + MAX_CELLS) {
     // a cell voltage reference was updated
     uint16_t cell_offset = reg - offset;
     uint16_t cell_address = cell_offset + 1;
-    uint16_t voltage_ref = registers.cell_voltage_refs[cell_offset];
+    uint16_t cell_voltage = registers.cell_voltages[cell_offset];
 
     cell_monitors_write(
       &cell_monitors,
       cell_address,
-      CELL_MONITORS_REG_VOLTAGE_REF,
-      voltage_ref
+      CELL_MONITORS_REG_VOLTAGE,
+      cell_voltage
     );
   }
 }
@@ -233,7 +248,6 @@ static void handle_cell_updated(event_t *event) {
 
   uint8_t cell_index = cell_address - 1;
   registers.cell_voltages[cell_index] = cell_monitors.cell_states[cell_index].voltage;
-  registers.cell_voltage_refs[cell_index] = cell_monitors.cell_states[cell_index].voltage_ref;
 
   absolute_time_t sent_at = cell_monitors.current_request.sent_at;
   absolute_time_t received_at = cell_monitors.current_request.received_at;

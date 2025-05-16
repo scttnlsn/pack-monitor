@@ -32,7 +32,6 @@ void cell_monitors_init(cell_monitors_t *cell_monitors, uart_inst_t *uart, uint 
     cell_state_t cell_state = {
       .cell_address = cell_address,
       .voltage = 0,
-      .voltage_ref = 0,
       .last_read_at = 0,
     };
     cell_monitors->cell_states[cell_address - 1] = cell_state;
@@ -123,7 +122,6 @@ void cell_monitors_disconnect(cell_monitors_t *cell_monitors) {
 
   for (int i = 0; i < MAX_CELLS; i++) {
     cell_monitors->cell_states[i].voltage = 0;
-    cell_monitors->cell_states[i].voltage_ref = 0;
     cell_monitors->cell_states[i].last_read_at = 0;
   }
 
@@ -263,18 +261,8 @@ static void handle_response(cell_monitors_t *cell_monitors) {
       request.error = CELL_MONITORS_ERROR_NO_RESPONSE;
     } else {
       uint8_t cell_index = response_packet.address - 1;
-      if (response_packet.write == 1) {
-        if (response_packet.reg == CELL_MONITORS_REG_VOLTAGE_REF) {
-          cell_monitors->cell_states[cell_index].voltage_ref = response_packet.value;
-        }
-      } else {
-        if (response_packet.reg == CELL_MONITORS_REG_VOLTAGE) {
-          cell_monitors->cell_states[cell_index].voltage = response_packet.value;
-          cell_monitors->cell_states[cell_index].last_read_at = get_absolute_time();
-        } else if (response_packet.reg == CELL_MONITORS_REG_VOLTAGE_REF) {
-          cell_monitors->cell_states[cell_index].voltage_ref = response_packet.value;
-        }
-      }
+      cell_monitors->cell_states[cell_index].voltage = response_packet.value;
+      cell_monitors->cell_states[cell_index].last_read_at = get_absolute_time();
 
       event_t event = {
         .event_type = EVENT_TYPE_CELL_UPDATED,

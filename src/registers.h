@@ -21,9 +21,11 @@
 #define ERROR_WATCHDOG (1 << 1)
 #define ERROR_CRC (1 << 2)
 #define ERROR_TIMEOUT (1 << 3)
+#define ERROR_NO_RESPONSE (1 << 4)
+#define ERROR_MODBUS (1 << 5)
 
 // packed and aligned so we can treat it as an array of uint16_t registers
-typedef struct __attribute__((packed, aligned(sizeof(uint32_t)))) {
+typedef struct __attribute__((packed, aligned(sizeof(uint16_t)))) {
   uint16_t version;
 
   // bitmasked flags
@@ -41,7 +43,6 @@ typedef struct __attribute__((packed, aligned(sizeof(uint32_t)))) {
   uint16_t temp_lower;
 
   uint16_t cell_voltages[MAX_CELLS];
-  uint16_t cell_voltage_refs[MAX_CELLS];
 } registers_t;
 
 #endif

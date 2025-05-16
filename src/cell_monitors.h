@@ -12,9 +12,8 @@
 #define MAX_CELLS 128
 
 #define CELL_MONITORS_REG_ADDRESS 0x1
-#define CELL_MONITORS_REG_VOLTAGE_REF 0x2
-#define CELL_MONITORS_REG_VOLTAGE 0x3
-#define CELL_MONITORS_REG_BALANCE 0x4
+#define CELL_MONITORS_REG_VOLTAGE 0x2
+#define CELL_MONITORS_REG_BALANCE 0x3
 
 #define CELL_MONITORS_ERROR_CRC (1 << 0)
 #define CELL_MONITORS_ERROR_TIMEOUT (1 << 1)
@@ -39,7 +38,6 @@ typedef struct {
 typedef struct {
   uint8_t cell_address;
   uint16_t voltage; // mV
-  uint16_t voltage_ref;
   absolute_time_t last_read_at;
 } cell_state_t;
 

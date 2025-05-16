@@ -31,7 +31,9 @@ void modbus_init(modbus_t *modbus) {
 void modbus_update(modbus_t *modbus) {
   modbus->request.unit_address = 0;
   modbus->request.pdu.function_code = 0;
-  modbus->error = 0;
+  modbus->request.pdu.address = 0;
+  modbus->request.pdu.value = 0;
+  modbus->request.crc = 0;
 
   modbus_read(modbus);
 
@@ -89,7 +91,7 @@ static void modbus_send(modbus_t *modbus, uint8_t *message, uint32_t len) {
   uint8_t buffer[1024];
   uint32_t index = 0;
 
-  buffer[index++] = modbus->unit_address;
+  buffer[index++] = modbus->request.unit_address;
 
   for (int i = 0; i < len; i++) {
     buffer[index++] = message[i];
@@ -117,6 +119,7 @@ static void modbus_handle_error(modbus_t *modbus) {
 
 static void modbus_handle_request(modbus_t *modbus) {
   if (modbus->unit_address != modbus->request.unit_address) {
+    // not addressed to this unit, just ignore
     return;
   }
 
@@ -165,6 +168,11 @@ static void modbus_write_single_register(modbus_t *modbus) {
   uint16_t register_idx = modbus->request.pdu.address - 1;
   uint16_t register_value = modbus->request.pdu.value;
 
+  if (register_idx >= modbus->num_registers) {
+    modbus_handle_error(modbus);
+    return;
+  }
+
   uint16_t previous_value = modbus->registers[register_idx];
   modbus->registers[register_idx] = register_value;
 
@@ -187,7 +195,7 @@ static void modbus_write_single_register(modbus_t *modbus) {
         .current_value = register_value,
       },
     };
-  events_enqueue(event);
+    events_enqueue(event);
   }
 }
 

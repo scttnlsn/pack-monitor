@@ -58,7 +58,7 @@ void protection_update(registers_t *registers) {
                     ov = false;
                 }
 
-                if (uv && min_voltage > PROTECTION_UV_ENABLE && min_voltage > PROTECTIOn_UV_DISABLE) {
+                if (uv && min_voltage > PROTECTION_UV_ENABLE && min_voltage > PROTECTION_UV_DISABLE) {
                     uv = false;
                 }
             }

@@ -1,3 +1,6 @@
 .venv/
 build/
 pico-sdk/
+hardware/pack-monitor-backups
+hardware/fp-info-cache
+hardware/gerbers

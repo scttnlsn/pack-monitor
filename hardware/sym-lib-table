@@ -3,4 +3,5 @@
   (lib (name "MCU_RaspberryPi_and_Boards")(type "KiCad")(uri "${KIPRJMOD}/libraries/MCU_RaspberryPi_and_Boards.kicad_sym")(options "")(descr ""))
   (lib (name "4628")(type "KiCad")(uri "${KIPRJMOD}/libraries/4628.kicad_sym")(options "")(descr ""))
   (lib (name "1985302")(type "KiCad")(uri "${KIPRJMOD}/libraries/1985302.kicad_sym")(options "")(descr ""))
+  (lib (name "pack-monitor")(type "KiCad")(uri "${KIPRJMOD}/libraries/pack-monitor.kicad_sym")(options "")(descr ""))
 )

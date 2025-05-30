@@ -469,7 +469,7 @@
       "plot": "gerbers/",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "",
+      "step": "pack-monitor.step",
       "svg": "",
       "vrml": ""
     },
